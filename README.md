@@ -66,7 +66,7 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 - Salesforce Case 생성 시 Slack 채널로 실시간 알림 전송
 - 주요 정보 및 액션 버튼을 포함한 카드형 메시지 제공
 
-![NewCase](https://github.com/Eungu-Kim/HubSpot-Salesforce-Sync-Interface/releases/download/v1.0/newcase.gif)
+![NewCase](https://github.com/Eungu-Kim/Slack-Salesforce-Workflow/releases/download/v1.0/newcase.gif)
 
 ---
 
@@ -82,7 +82,7 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 - Slack 모달을 통해 고객 응대 이메일 작성
 - 이메일 발송과 동시에 Case 상태 변경
 
-![AccountEmail](https://github.com/Eungu-Kim/HubSpot-Salesforce-Sync-Interface/releases/download/v1.0/accountEmail.gif)
+![AccountEmail](https://github.com/Eungu-Kim/Slack-Salesforce-Workflow/releases/download/v1.0/accountEmail.gif)
 
 ---
 
