@@ -1,3 +1,5 @@
+console.log("NEW SERVER.JS LOADED");
+
 require("dotenv").config();
 
 const express = require("express");
@@ -75,31 +77,35 @@ app.post("/slack/interactions", async (req, res) => {
         return res.status(200).send("ok");
     }
 
-    if (payload.type === "view_submission") {
-      const callbackId = payload.view?.callback_id;
-      if (callbackId !== "start_case_modal") {
-        return res.status(200).json({ response_action: "clear" });
-      }
+if (payload.type === "view_submission") {
+  console.log("view_submission new code");
+  const callbackId = payload.view?.callback_id;
+  if (callbackId !== "start_case_modal") {
+    return res.status(200).json({ response_action: "clear" });
+  }
 
-      const privateMetadata = payload.view?.private_metadata || "";
-      const [caseId, channelId] = privateMetadata.split("|");
+  const privateMetadata = payload.view?.private_metadata || "";
+  const [caseId, channelId] = privateMetadata.split("|");
 
-      const values = payload.view?.state?.values || {};
-      const emailTo = values.email_block?.email_input?.value || "";
-      const emailSubject = values.subject_block?.subject_input?.value || "";
-      const emailBody = values.body_block?.body_input?.value || "";
+  const values = payload.view?.state?.values || {};
+  const emailTo = values.email_block?.email_input?.value || "";
+  const emailSubject = values.subject_block?.subject_input?.value || "";
+  const emailBody = values.body_block?.body_input?.value || "";
 
-      res.status(200).json({ response_action: "clear" });
+  res.status(200).json({ response_action: "clear" });
 
-      await updateCaseStatus(caseId, "Working");
-      await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
+  await updateCaseStatus(caseId, "Working");
+  await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
 
-      await postSlackMessage(channelId, {
-        text: `✅ Case 처리 시작 완료\nCase Id: ${caseId}\n수신자: ${emailTo}\nStatus: Working`
-      });
+  const caseRecord = await getCaseInfo(caseId);
+  const caseNumber = caseRecord.CaseNumber;
 
-      return;
-    }
+  await postSlackMessage(channelId, {
+    text: `✅ Case 처리 시작 완료\nCase Number: ${caseNumber}\n수신자: ${emailTo}\nStatus: Working`
+  });
+
+  return;
+}
 
     return res.status(200).send("ok");
   } catch (error) {
@@ -115,9 +121,10 @@ async function openStartCaseModal(triggerId, buttonValue, channelId) {
   const caseId = parts[1] || "";
 
   const caseRecord = await getCaseInfo(caseId);
+  const caseNumber = caseRecord.CaseNumber;
   const defaultEmail = getDefaultCustomerEmail(caseRecord);
   const defaultSubject = `[Salesforce Customer Support] 문의 접수 안내`;
-  const defaultEmailBody = `안녕하세요, 고객님.\n\n문의( Case ${caseRecord.CaseNumber} )에 담당자가 배치되었습니다.\n빠르게 해결 후 답변드리겠습니다.\n\n감사합니다.\n고객지원팀 드림`
+  const defaultEmailBody = `안녕하세요, 고객님.\n\n문의( Case ${caseNumber} )에 담당자가 배치되었습니다.\n빠르게 해결 후 답변드리겠습니다.\n\n감사합니다.\n고객지원팀 드림`
 
   const modalView = {
     type: "modal",
