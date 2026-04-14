@@ -93,15 +93,18 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 ## 🔨 프로젝트 구조
 
 ### 시스템 흐름
+
+```
 [Salesforce]
-↓ (Flow Trigger)
+   ↓  (Flow Trigger)
 [Apex]
-↓ (Webhook)
+   ↓ (Webhook)
 [Slack]
-↓ (Interaction)
+   ↓ (Interaction)
 [Node.js Server]
-↓ (REST API)
+   ↓ (REST API)
 [Salesforce]
+```
 
 <br/>
 
