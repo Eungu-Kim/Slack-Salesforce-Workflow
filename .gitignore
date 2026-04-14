@@ -42,6 +42,20 @@ $RECYCLE.BIN/
 # Local environment variables
 .env
 
+# Node (nested project)
+scripts/node-app/node_modules/
+scripts/node-app/.env
+scripts/node-app/.env.*
+
+# Editor
+.vscode/
+.idea/
+
+# Env variants
+*.env.local
+*.env.development
+*.env.production
+
 # Python Salesforce Functions
 **/__pycache__/
 **/.venv/
