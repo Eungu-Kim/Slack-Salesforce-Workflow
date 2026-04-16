@@ -75,6 +75,33 @@ app.post("/slack/interactions", async (req, res) => {
             return;
         }
 
+        if (actionId === "check_duplicate") {
+          const caseId = value.split("|")[1];
+
+          console.log("중복여부 확인 시작", caseId);
+        
+          try {
+            const response = await axios.post(
+              `${SF_BASE_URL}/services/apexrest/case-duplicate/candidates`,
+              { caseId },
+              {
+                headers: {
+                  Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+                  "Content-Type": "application/json"
+                }
+              }
+            );
+        
+            console.log("후보 조회 결과:", JSON.stringify(response.data, null, 2));
+        
+          } catch (error) {
+            console.error("후보 조회 에러:", error.message);
+            console.error("response:", error.response?.data);
+          }
+        
+          return res.status(200).send();
+        }
+
         return res.status(200).send("ok");
     }
 
