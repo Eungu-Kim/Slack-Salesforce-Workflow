@@ -69,7 +69,8 @@ app.post("/slack/interactions", async (req, res) => {
                 const result = await postSlackMessage(payload.channel.id, messagePayload);
                 console.log("postSlackMessage respose: " + JSON.stringify(result, null, 2));
             } catch (error) {
-                console.error("view_account 에러" + error.response?.data || error.message); 
+                console.error("view_account 에러 메세지 " + error.message);
+                console.error("view_account 에러 response " + JSON.stringify(error.response?.data, null, 2));
             }
             return;
         }
@@ -101,7 +102,49 @@ if (payload.type === "view_submission") {
   const caseNumber = caseRecord.CaseNumber;
 
   await postSlackMessage(channelId, {
-    text: `✅ Case 처리 시작 완료\nCase Number: ${caseNumber}\n수신자: ${emailTo}\nStatus: Working`
+    text: "Case 처리 완료", // fallback
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "✅ Case 시작 이메일 전송 완료"
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: `*Case Number:*\n${caseNumber}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*Status:*\nWorking`
+          },
+          {
+            type: "mrkdwn",
+            text: `*수신자:*\n${emailTo}`
+          }
+        ]
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Salesforce에서 보기"
+            },
+            url: `${SF_BASE_URL}/lightning/r/Case/${caseId}/view`
+          }
+        ]
+      }
+    ]
   });
 
   return;
