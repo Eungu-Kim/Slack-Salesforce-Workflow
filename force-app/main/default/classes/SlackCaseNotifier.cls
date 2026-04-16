@@ -120,6 +120,17 @@ public with sharing class SlackCaseNotifier {
             'value' => 'start_case|' + c.Id
         });
 
+        actions.add(new Map<String, Object> {
+            'type' => 'button',
+            'action_id' => 'check_duplicate',
+            'text' => new Map<String, Object>{
+                'type' => 'plain_text',
+                'text' => '중복여부 확인',
+                'emoji' => true
+            },
+            'value' => 'check_duplicate|' + c.Id
+        });
+
         blocks.add(new Map<String, Object>{
             'type' => 'actions',
             'elements' => actions
