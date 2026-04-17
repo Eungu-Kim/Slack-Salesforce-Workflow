@@ -14,11 +14,13 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SF_BASE_URL = process.env.SF_BASE_URL;
 const SF_API_VERSION = process.env.SF_API_VERSION || "v62.0";
 // const SF_ACCESS_TOKEN = process.env.SF_ACCESS_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
 
 const AGENTFORCE_BASE_URL = process.env.AGENTFORCE_BASE_URL;
 const AGENTFORCE_MY_DOMAIN_URL = process.env.AGENTFORCE_MY_DOMAIN_URL;
-const CLIENT_ID = process.env.CLIENT_ID;
-const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const AGENTFORCE_CLIENT_ID = process.env.AGENTFORCE_CLIENT_ID;
+const AGENTFORCE_CLIENT_SECRET = process.env.AGENTFORCE_CLIENT_SECRET;
 const AGENTFORCE_AGENT_ID = process.env.AGENTFORCE_AGENT_ID;
 
 app.use(express.urlencoded({ extended: true }));
@@ -716,7 +718,7 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
   const duplicateFields = duplicateResults.slice(0, 10).map((item) => ({
     type: "mrkdwn",
     text:
-      `*Case ${safe(item.caseNumber)}*\n` +
+      `*Case* ${safe(item.caseNumber)} - ${safe(item.subject)}\n` +
       `${safe(item.issueSubcategory)} | score: ${safe(String(item.score))}\n` +
       `${safe(item.reason)}`
   }));
@@ -833,8 +835,8 @@ async function getSalesforceAccessToken() {
 async function getAgentforceAccessToken() {
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
-  params.append("client_id", CLIENT_ID);
-  params.append("client_secret", CLIENT_SECRET);
+  params.append("client_id", AGENTFORCE_CLIENT_ID);
+  params.append("client_secret", AGENTFORCE_CLIENT_SECRET);
 
   const response = await axios.post(
     `${AGENTFORCE_MY_DOMAIN_URL}/services/oauth2/token`,
