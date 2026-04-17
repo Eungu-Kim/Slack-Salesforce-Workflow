@@ -13,12 +13,12 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 const SF_BASE_URL = process.env.SF_BASE_URL;
 const SF_API_VERSION = process.env.SF_API_VERSION || "v62.0";
-const SF_ACCESS_TOKEN = process.env.SF_ACCESS_TOKEN;
+// const SF_ACCESS_TOKEN = process.env.SF_ACCESS_TOKEN;
 
 const AGENTFORCE_BASE_URL = process.env.AGENTFORCE_BASE_URL;
 const AGENTFORCE_MY_DOMAIN_URL = process.env.AGENTFORCE_MY_DOMAIN_URL;
-const AGENTFORCE_CLIENT_ID = process.env.AGENTFORCE_CLIENT_ID;
-const AGENTFORCE_CLIENT_SECRET = process.env.AGENTFORCE_CLIENT_SECRET;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const AGENTFORCE_AGENT_ID = process.env.AGENTFORCE_AGENT_ID;
 
 app.use(express.urlencoded({ extended: true }));
@@ -102,12 +102,13 @@ app.post("/slack/interactions", async (req, res) => {
         res.status(200).send("ok");
 
         try {
+          const sfAccessToken = await getSalesforceAccessToken();
           const sfResponse = await axios.post(
             `${SF_BASE_URL}/services/apexrest/case-duplicate/candidates`,
             { caseId },
             {
               headers: {
-                Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+                Authorization: `Bearer ${sfAccessToken}`,
                 "Content-Type": "application/json"
               }
             }
@@ -148,7 +149,15 @@ app.post("/slack/interactions", async (req, res) => {
           const session = await startAgentforceSession(accessToken);
           console.log("Agent session 시작 결과:", JSON.stringify(session, null, 2));
 
-          const sessionId = session.sessionId;
+          const sessionId =
+          session?.sessionId ||
+          session?.id ||
+          session?.session?.id ||
+          session?.conversationId;
+        
+          if (!sessionId) {
+            throw new Error(`Agent sessionId를 찾지 못했습니다. response=${JSON.stringify(session)}`);
+          }
 
           const agentResponse = await sendAgentforceMessage(
             accessToken,
@@ -317,7 +326,7 @@ app.post("/slack/interactions", async (req, res) => {
             type: "header",
             text: {
               type: "plain_text",
-              text: "✅ Case 시작 이메일 전송 완료"
+              text: "✅  Case 시작 이메일 전송 완료"
             }
           },
           {
@@ -339,6 +348,13 @@ app.post("/slack/interactions", async (req, res) => {
           },
           {
             type: "divider"
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "🤖  Agent 추천 다음 행동"
+            }
           },
           {
             type: "actions",
@@ -467,12 +483,13 @@ async function openStartCaseModal(triggerId, buttonValue, channelId) {
 // Salesforce - Case / Account
 // ------------------------------------
 async function updateCaseStatus(caseId, status) {
+  const sfAccessToken = await getSalesforceAccessToken();
   await axios.patch(
     `${SF_BASE_URL}/services/data/${SF_API_VERSION}/sobjects/Case/${caseId}`,
     { Status: status },
     {
       headers: {
-        Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${sfAccessToken}`,
         "Content-Type": "application/json"
       }
     }
@@ -480,6 +497,8 @@ async function updateCaseStatus(caseId, status) {
 }
 
 async function sendCaseEmail(caseId, toEmail, subject, body) {
+  const sfAccessToken = await getSalesforceAccessToken();
+
   const response = await axios.post(
     `${SF_BASE_URL}/services/apexrest/case-email`,
     {
@@ -490,7 +509,7 @@ async function sendCaseEmail(caseId, toEmail, subject, body) {
     },
     {
       headers: {
-        Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${sfAccessToken}`,
         "Content-Type": "application/json"
       }
     }
@@ -500,11 +519,13 @@ async function sendCaseEmail(caseId, toEmail, subject, body) {
 }
 
 async function getCaseInfo(caseId) {
+  const sfAccessToken = await getSalesforceAccessToken();
+
   const response = await axios.get(
     `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
     {
       headers: {
-        Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${sfAccessToken}`,
         "Content-Type": "application/json"
       },
       params: {
@@ -531,11 +552,13 @@ function getDefaultCustomerEmail(caseRecord) {
 }
 
 async function getAccountInfo(accountId) {
+  const sfAccessToken = await getSalesforceAccessToken();
+
   const response = await axios.get(
     `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
     {
       headers: {
-        Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${sfAccessToken}`,
         "Content-Type": "application/json"
       },
       params: {
@@ -558,11 +581,13 @@ async function getAccountInfo(accountId) {
 }
 
 async function getOpenCaseCount(accountId) {
+  const sfAccessToken = await getSalesforceAccessToken();
+
   const response = await axios.get(
     `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
     {
       headers: {
-        Authorization: `Bearer ${SF_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${sfAccessToken}`,
         "Content-Type": "application/json"
       },
       params: {
@@ -708,7 +733,7 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*현재 Case:* ${safe(currentCase.caseNumber)}\n*Subject:* ${safe(currentCase.subject)}`
+        text: `*현재 Case* ${safe(currentCase.caseNumber)} - ${safe(currentCase.subject)}`
       }
     }
   ];
@@ -719,10 +744,8 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
       text: {
         type: "mrkdwn",
         text:
-          `*추천 기준 Case*\n` +
-          `Case ${safe(recommendedMaster.caseNumber)} | ${safe(recommendedMaster.status)}\n` +
-          `${safe(recommendedMaster.createdDate)}\n` +
-          `${safe(recommendedMaster.subject)}`
+          `*추천 기준 Case* ${safe(recommendedMaster.caseNumber)} - ${safe(recommendedMaster.subject)}\n` +
+          `상태: ${safe(recommendedMaster.status)} | 생성일: ${safe(recommendedMaster.createdDate)}`
       }
     });
   }
@@ -730,10 +753,19 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
   blocks.push({ type: "divider" });
 
   if (duplicateFields.length > 0) {
-    blocks.push({
-      type: "section",
-      fields: duplicateFields
-    });
+    blocks.push(
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*후보 Case*"
+        }
+      },
+      {
+        type: "section",
+        fields: duplicateFields
+      }
+    );
   }
 
   blocks.push({
@@ -774,13 +806,35 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
 }
 
 // ------------------------------------
+// Salesforce (Token)
+// ------------------------------------
+async function getSalesforceAccessToken() {
+  const params = new URLSearchParams();
+  params.append("grant_type", "client_credentials");
+  params.append("client_id", CLIENT_ID);
+  params.append("client_secret", CLIENT_SECRET);
+
+  const response = await axios.post(
+    `${SF_BASE_URL}/services/oauth2/token`,
+    params,
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      }
+    }
+  );
+
+  return response.data.access_token;
+}
+
+// ------------------------------------
 // Agentforce
 // ------------------------------------
 async function getAgentforceAccessToken() {
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
-  params.append("client_id", AGENTFORCE_CLIENT_ID);
-  params.append("client_secret", AGENTFORCE_CLIENT_SECRET);
+  params.append("client_id", CLIENT_ID);
+  params.append("client_secret", CLIENT_SECRET);
 
   const response = await axios.post(
     `${AGENTFORCE_MY_DOMAIN_URL}/services/oauth2/token`,
@@ -933,7 +987,7 @@ async function openMergeModal(triggerId, data) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*현재 Case:* ${currentCase.caseNumber}`
+          text: `*현재 Case* ${safe(currentCase.caseNumber)} - ${safe(currentCase.subject)}`
         }
       },
 
@@ -954,7 +1008,7 @@ async function openMergeModal(triggerId, data) {
               value: "current_only"
             },
             {
-              text: { type: "plain_text", text: "전체 병합" },
+              text: { type: "plain_text", text: "중복 후보 전체 병합" },
               value: "merge_all"
             }
           ]
@@ -975,7 +1029,7 @@ async function openMergeModal(triggerId, data) {
           options: duplicateResults.map(item => ({
             text: {
               type: "plain_text",
-              text: `Case ${item.caseNumber} | ${safe(item.subject)} | score: ${item.score}`
+              text: `Case ${item.caseNumber} - ${safe(item.subject)} | score: ${item.score}`
             },
             value: item.caseNumber
           }))
