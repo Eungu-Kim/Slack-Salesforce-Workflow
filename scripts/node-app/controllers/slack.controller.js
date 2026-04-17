@@ -24,6 +24,9 @@ const {
   buildDuplicateAnalysisSlackMessage
 } = require("../services/slack.service");
 
+// 액션 별 기능 정의
+// 버튼 기능: 고객 정보 보기, Case 처리 시작, 중복여부 확인, 병합하기기
+// 후처리 기능: Case 시작 이메일 전송 완료
 async function handleSlackInteractions(req, res) {
   try {
     if (!req.body.payload) {
@@ -45,11 +48,7 @@ async function handleSlackInteractions(req, res) {
       console.log("actionId:", actionId);
       console.log("value:", value);
 
-      if (actionId === "start_case") {
-        await openStartCaseModal(payload.trigger_id, value, payload.channel.id);
-        return res.status(200).send("ok");
-      }
-
+      // 고객 정보 보기
       if (actionId === "view_account") {
         const parts = value.split("|");
         const caseId = parts[1] || "";
@@ -78,6 +77,13 @@ async function handleSlackInteractions(req, res) {
         return;
       }
 
+      // Case 처리 시작
+      if (actionId === "start_case") {
+        await openStartCaseModal(payload.trigger_id, value, payload.channel.id);
+        return res.status(200).send("ok");
+      }
+
+      // 중복여부 확인
       if (actionId === "check_duplicate") {
         await postToSlackResponseUrl(payload.response_url, {
           response_type: "in_channel",
@@ -264,6 +270,7 @@ async function handleSlackInteractions(req, res) {
         return;
       }
 
+      // 중복여부 확인 -> 병합하기
       if (actionId === "open_merge_modal") {
         try {
           const data = JSON.parse(value);
@@ -279,6 +286,7 @@ async function handleSlackInteractions(req, res) {
       return res.status(200).send("ok");
     }
 
+    // Case 시작 이메일 전송 완료 메세지
     if (payload.type === "view_submission") {
       console.log("view_submission new code");
 
@@ -368,6 +376,7 @@ async function handleSlackInteractions(req, res) {
   }
 }
 
+// 후보 Case 선택
 function selectRecommendedMasterCase(candidates, duplicateResults) {
   const duplicateCaseNumbers = new Set(
     duplicateResults.map((item) => item.caseNumber)

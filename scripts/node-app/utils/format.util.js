@@ -1,7 +1,9 @@
+// Null 방지
 function safe(value) {
   return value && String(value).trim() ? value : "-";
 }
 
+// CreatedDate 한국 기준 시간 + yyyy-mm-dd / hh:mm 포맷 설정
 function formatDate(isoString) {
   if (!isoString) return "-";
 

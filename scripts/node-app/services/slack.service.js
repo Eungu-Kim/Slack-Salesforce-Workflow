@@ -3,6 +3,7 @@ const { SLACK_BOT_TOKEN } = require("../config/env");
 const { safe, formatDate } = require("../utils/format.util");
 const { getCaseInfo, getAccountRecordUrl } = require("./salesforce.service");
 
+// Slack 메세지 POST
 async function postSlackMessage(channel, payload) {
   const response = await axios.post(
     "https://slack.com/api/chat.postMessage",
@@ -27,6 +28,7 @@ async function postSlackMessage(channel, payload) {
   return response.data;
 }
 
+// Slack 인터렉션 후속 메세지 POST
 async function postToSlackResponseUrl(responseUrl, payload) {
   if (!responseUrl) {
     console.warn("response_url이 없습니다. Slack 후속 응답을 보낼 수 없습니다.");
@@ -43,10 +45,12 @@ async function postToSlackResponseUrl(responseUrl, payload) {
   return response.data;
 }
 
+// Email 전송시 Default Email 조회(Case Field ContactEmail)
 function getDefaultCustomerEmail(caseRecord) {
   return caseRecord?.ContactEmail || "";
 }
 
+// Email 전송 모달 Open (Default Email, Subject, Email Body 포함)
 async function openStartCaseModal(triggerId, buttonValue, channelId) {
   const parts = buttonValue.split("|");
   const caseId = parts[1] || "";
@@ -139,6 +143,7 @@ async function openStartCaseModal(triggerId, buttonValue, channelId) {
   console.log("views.open response:", response.data);
 }
 
+// 병합 모달 Open
 async function openMergeModal(triggerId, data) {
   const { currentCase, duplicateResults } = data;
 
@@ -224,6 +229,7 @@ async function openMergeModal(triggerId, data) {
   );
 }
 
+// 고객 정보 조회 후속 메세지 정의
 function buildAccountSlackMessage(account, openCaseCount) {
   const summary =
     openCaseCount > 0
@@ -289,11 +295,12 @@ function buildAccountSlackMessage(account, openCaseCount) {
   };
 }
 
+// 중복여부 확인 후속 메세지(중복 분석 결과)
 function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recommendedMaster) {
-  const duplicateFields = duplicateResults.slice(0, 8).map((item) => ({
+  const duplicateFields = duplicateResults.slice(0, 10).map((item) => ({
     type: "mrkdwn",
     text:
-      `*Case* ${safe(item.caseNumber)} - ${safe(item.subject)}\n` +
+      `Case ${safe(item.caseNumber)} - ${safe(item.subject)}\n` +
       `${safe(item.issueSubcategory)} | score: ${safe(String(item.score))}\n` +
       `${safe(item.reason)}`
   }));
@@ -335,7 +342,7 @@ function buildDuplicateAnalysisSlackMessage(currentCase, duplicateResults, recom
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*후보 Case*"
+          text: "*후보 Case* (최대 6개 출력)"
         }
       },
       {

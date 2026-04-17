@@ -6,6 +6,10 @@ const {
   CLIENT_SECRET
 } = require("../config/env");
 
+// Salesforce Access Token 발급
+// 문제시 Connected App 확인
+// Salesforce와의 interaction 시 매번 Token 재발급
+// 캐싱 기능 추가 필요
 async function getSalesforceAccessToken() {
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
@@ -25,6 +29,7 @@ async function getSalesforceAccessToken() {
   return response.data.access_token;
 }
 
+// Case Status 변경
 async function updateCaseStatus(caseId, status) {
   const sfAccessToken = await getSalesforceAccessToken();
   await axios.patch(
@@ -39,6 +44,7 @@ async function updateCaseStatus(caseId, status) {
   );
 }
 
+// Case 처리 시작 Email 전송
 async function sendCaseEmail(caseId, toEmail, subject, body) {
   const sfAccessToken = await getSalesforceAccessToken();
   const response = await axios.post(
@@ -60,6 +66,7 @@ async function sendCaseEmail(caseId, toEmail, subject, body) {
   console.log("sendCaseEmail response:", response.status, response.data);
 }
 
+// CaseId 기반 정보 조회
 async function getCaseInfo(caseId) {
   const sfAccessToken = await getSalesforceAccessToken();
   const response = await axios.get(
@@ -87,6 +94,7 @@ async function getCaseInfo(caseId) {
   return records[0];
 }
 
+// Account Id 기반 Account 정보 조회
 async function getAccountInfo(accountId) {
   const sfAccessToken = await getSalesforceAccessToken();
   const response = await axios.get(
@@ -114,6 +122,7 @@ async function getAccountInfo(accountId) {
   return records[0];
 }
 
+// Account Id 기반 연관 Case 갯수 조회
 async function getOpenCaseCount(accountId) {
   const sfAccessToken = await getSalesforceAccessToken();
   const response = await axios.get(
@@ -137,6 +146,7 @@ async function getOpenCaseCount(accountId) {
   return response.data.totalSize || 0;
 }
 
+// Account Id 기반 디테일 페이지 URL 생성
 function getAccountRecordUrl(accountId) {
   return `${SF_BASE_URL}/lightning/r/Account/${accountId}/view`;
 }

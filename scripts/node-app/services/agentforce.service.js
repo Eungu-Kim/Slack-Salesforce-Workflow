@@ -8,6 +8,8 @@ const {
   AGENTFORCE_AGENT_ID
 } = require("../config/env");
 
+// Agent Access Token 발급
+// 문제시 External Client App 확인
 async function getAgentforceAccessToken() {
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
@@ -27,6 +29,8 @@ async function getAgentforceAccessToken() {
   return response.data.access_token;
 }
 
+// Agent Session 시작 후 Session Id 반환 가능
+// Session은 Agent 활용 기능 수행 시 매번 초기화(재시작)
 async function startAgentforceSession(accessToken) {
   const body = {
     externalSessionKey: crypto.randomUUID(),
@@ -53,6 +57,8 @@ async function startAgentforceSession(accessToken) {
   return response.data;
 }
 
+// Agent에게 질문
+// Session 초기화 후 첫 질문으로만 사용
 async function sendAgentforceMessage(accessToken, sessionId, messageText) {
   const body = {
     message: {
@@ -76,6 +82,8 @@ async function sendAgentforceMessage(accessToken, sessionId, messageText) {
   return response.data;
 }
 
+// 중복 분석 결과 JSON만 뽑아내기
+// Agent Prompt 상 결과는 JSON으로만 나오는 것이 맞으나, 오류 발생 + Null 대비
 function extractDuplicateAnalysisFromAgentResponse(agentResponse) {
   const messages = agentResponse?.messages || [];
   const textCandidates = messages
