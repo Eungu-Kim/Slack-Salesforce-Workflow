@@ -82,8 +82,31 @@ async function sendAgentforceMessage(accessToken, sessionId, messageText) {
   return response.data;
 }
 
+// 공통 JSON 파서
+function parseJsonText(text) {
+  if (!text || typeof text !== "string") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
 // 중복 분석 결과 JSON만 뽑아내기
 // Agent Prompt 상 결과는 JSON으로만 나오는 것이 맞으나, 오류 발생 + Null 대비
+// Structured output으로 변경 후 results 배열 파싱
 function extractDuplicateAnalysisFromAgentResponse(agentResponse) {
   const messages = agentResponse?.messages || [];
   const textCandidates = messages
@@ -97,8 +120,9 @@ function extractDuplicateAnalysisFromAgentResponse(agentResponse) {
 
   const lastText = textCandidates[textCandidates.length - 1];
 
+  let parsed;
   try {
-    return JSON.parse(lastText);
+    parsed = JSON.parse(lastText);
   } catch (e) {
     const jsonMatch = lastText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -107,17 +131,58 @@ function extractDuplicateAnalysisFromAgentResponse(agentResponse) {
     }
 
     try {
-      return JSON.parse(jsonMatch[0]);
+      parsed = JSON.parse(jsonMatch[0]);
     } catch (innerError) {
       console.warn("Agent 응답 JSON 파싱 실패:", innerError.message);
       return null;
     }
   }
+
+  // Structured output 대응
+  if (parsed?.resultsJson && typeof parsed.resultsJson === "string") {
+    try {
+      parsed.results = JSON.parse(parsed.resultsJson);
+    } catch (e) {
+      console.warn("resultsJson 파싱 실패:", e.message);
+      parsed.results = [];
+    }
+  }
+
+  return parsed;
+}
+
+function extractNextActionFromAgentResponse(agentResponse) {
+  const text =
+    agentResponse?.messages?.[0]?.message ||
+    agentResponse?.output ||
+    agentResponse?.response ||
+    "";
+
+  const firstParsed = parseJsonText(text);
+  if (!firstParsed) {
+    return null;
+  }
+
+  // 바로 최종 JSON
+  if (
+    typeof firstParsed.recommendedAction === "string" &&
+    typeof firstParsed.reason === "string"
+  ) {
+    return firstParsed;
+  }
+
+  // 2중 구조 { message: "{...}" }
+  if (typeof firstParsed.message === "string") {
+    return parseJsonText(firstParsed.message);
+  }
+
+  return null;
 }
 
 module.exports = {
   getAgentforceAccessToken,
   startAgentforceSession,
   sendAgentforceMessage,
-  extractDuplicateAnalysisFromAgentResponse
+  extractDuplicateAnalysisFromAgentResponse,
+  extractNextActionFromAgentResponse
 };

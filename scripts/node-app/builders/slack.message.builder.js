@@ -268,7 +268,7 @@ function buildDuplicateAnalysisErrorMessage({ errorMessage }) {
 }
 
 // Case 처리 완료 후속 메세지지
-function buildCaseStartedMessage({ caseNumber, emailTo, caseRecordUrl }) {
+function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRecordUrl }) {
   return {
     text: "Case 처리 완료",
     blocks: [
@@ -300,13 +300,6 @@ function buildCaseStartedMessage({ caseNumber, emailTo, caseRecordUrl }) {
         type: "divider"
       },
       {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "🤖  Agent 추천 다음 행동"
-        }
-      },
-      {
         type: "actions",
         elements: [
           {
@@ -316,8 +309,70 @@ function buildCaseStartedMessage({ caseNumber, emailTo, caseRecordUrl }) {
               text: "Salesforce에서 보기"
             },
             url: caseRecordUrl
+          },
+          {
+            type: "button",
+            action_id: "recommend_next_action",
+            text: {
+              type: "plain_text",
+              text: "🤖 Agent 다음 행동 추천"
+            },
+            style: "primary",
+            value: JSON.stringify({
+              currentCase: {
+                id: caseId,
+                caseNumber,
+                subject
+              }
+            })
           }
         ]
+      }
+    ]
+  };
+}
+
+function buildNBASlackMessage({ result }) {
+  return {
+    text: "Agent 다음 행동 추천 결과",
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "🤖 Agent 추천"
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*추천 행동:*\n${safe(result.recommendedAction)}`
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: `*우선순위:*\n${safe(result.priority)}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*고객 커뮤니케이션 필요:*\n${result.customerCommunicationNeeded ? "예" : "아니오"}`
+          },
+          {
+            type: "mrkdwn",
+            text: `*내부 조사 필요:*\n${result.internalInvestigationNeeded ? "예" : "아니오"}`
+          }
+        ]
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*사유:*\n${safe(result.reason)}`
+        }
       }
     ]
   };
@@ -330,5 +385,6 @@ module.exports = {
   buildDuplicateParseErrorMessage,
   buildNoDuplicateResultsMessage,
   buildDuplicateAnalysisErrorMessage,
-  buildCaseStartedMessage
+  buildCaseStartedMessage,
+  buildNBASlackMessage
 };
