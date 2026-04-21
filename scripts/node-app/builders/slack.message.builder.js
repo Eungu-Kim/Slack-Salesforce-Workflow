@@ -332,6 +332,7 @@ function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRec
   };
 }
 
+// Agent 다음 행동 추천 후속 메세지
 function buildNBASlackMessage({ result }) {
   return {
     text: "Agent 다음 행동 추천 결과",
@@ -378,6 +379,71 @@ function buildNBASlackMessage({ result }) {
   };
 }
 
+// 병합 실행 후속 메세지
+function buildCaseMergedMessage({
+  currentCase,
+  masterCase,
+  currentCaseRecordUrl,
+  msCaseRecordUrl, 
+}) {
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "✅  Case 병합 완료"
+      }
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*현재 Case* ${safe(currentCase.caseNumber)} - ${safe(currentCase.subject)} / 상태: ${safe(currentCase.status)}`
+      }
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Master Case* ${safe(masterCase.caseNumber)} - ${safe(masterCase.subject)} / 상태: ${safe(masterCase.status)}`
+      }
+    }
+  ];
+
+  blocks.push({ type: "divider" });
+
+  blocks.push(
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "현재 Case 보기"
+          },
+          url: currentCaseRecordUrl
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Master Case 보기"
+          },
+          url: msCaseRecordUrl
+        }
+      ]
+    }
+  );
+
+  return {
+    response_type: "in_channel",
+    replace_original: false,
+    text: `Case 병합 완료 - Master Case ${safe(masterCase.caseNumber)}`,
+    blocks
+  };
+}
+
 module.exports = {
   buildAccountSlackMessage,
   buildDuplicateAnalysisSlackMessage,
@@ -386,5 +452,6 @@ module.exports = {
   buildNoDuplicateResultsMessage,
   buildDuplicateAnalysisErrorMessage,
   buildCaseStartedMessage,
-  buildNBASlackMessage
+  buildNBASlackMessage,
+  buildCaseMergedMessage
 };

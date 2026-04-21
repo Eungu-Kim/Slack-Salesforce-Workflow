@@ -44,6 +44,21 @@ async function updateCaseStatus(caseId, status) {
   );
 }
 
+// Case Merged_Into__c 변경
+async function updateCaseMergedInto(caseId, masterCaseId) {
+  const sfAccessToken = await getSalesforceAccessToken();
+  await axios.patch(
+    `${SF_BASE_URL}/services/data/${SF_API_VERSION}/sobjects/Case/${caseId}`,
+    { Merged_Into__c: masterCaseId },
+    {
+      headers: {
+        Authorization: `Bearer ${sfAccessToken}`,
+        "Content-Type": "application/json"
+      }
+    }
+  )
+}
+
 // Case 처리 시작 Email 전송
 async function sendCaseEmail(caseId, toEmail, subject, body) {
   const sfAccessToken = await getSalesforceAccessToken();
@@ -66,7 +81,7 @@ async function sendCaseEmail(caseId, toEmail, subject, body) {
   console.log("sendCaseEmail response:", response.status, response.data);
 }
 
-// CaseId 기반 정보 조회
+// CaseId 기반 Case 조회
 async function getCaseInfo(caseId) {
   const sfAccessToken = await getSalesforceAccessToken();
   const response = await axios.get(
@@ -81,6 +96,34 @@ async function getCaseInfo(caseId) {
           SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status
           FROM Case
           WHERE Id = '${caseId}'
+          LIMIT 1
+        `.replace(/\s+/g, " ").trim()
+      }
+    }
+  );
+
+  const records = response.data.records || [];
+  if (!records.length) {
+    throw new Error("Case not found");
+  }
+  return records[0];
+}
+
+// CaseNumber 기반 Case 조회
+async function getCaseInfoNumber(caseNumber) {
+  const sfAccessToken = await getSalesforceAccessToken();
+  const response = await axios.get(
+    `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
+    {
+      headers: {
+        Authorization: `Bearer ${sfAccessToken}`,
+        "Content-Type": "application/json"
+      },
+      params: {
+        q: `
+          SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status
+          FROM Case
+          WHERE CaseNumber = '${caseNumber}'
           LIMIT 1
         `.replace(/\s+/g, " ").trim()
       }
@@ -154,9 +197,11 @@ function getAccountRecordUrl(accountId) {
 module.exports = {
   getSalesforceAccessToken,
   updateCaseStatus,
+  updateCaseMergedInto,
   sendCaseEmail,
   getCaseInfo,
   getAccountInfo,
   getOpenCaseCount,
-  getAccountRecordUrl
+  getAccountRecordUrl,
+  getCaseInfoNumber
 };

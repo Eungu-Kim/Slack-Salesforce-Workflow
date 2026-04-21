@@ -74,18 +74,24 @@ function buildStartCaseModalView({
   };
 }
 
-// 중복 병합 모달
-function buildMergeModalView({ currentCase, duplicateResults }) {
+// 병합 Master 선택 모달
+function buildMergeModalView({ currentCase, duplicateResults, channelId }) {
   return {
     type: "modal",
-    callback_id: "merge_modal",
+    callback_id: "merge_case_modal",
+    private_metadata: JSON.stringify({
+      currentCaseId: currentCase.id,
+      currentCaseNumber: currentCase.caseNumber,
+      currentCaseSubject: currentCase.subject,
+      channelId
+    }),
     title: {
       type: "plain_text",
       text: "케이스 병합"
     },
     submit: {
       type: "plain_text",
-      text: "병합 실행"
+      text: "다음"
     },
     close: {
       type: "plain_text",
@@ -101,36 +107,18 @@ function buildMergeModalView({ currentCase, duplicateResults }) {
       },
       {
         type: "input",
-        block_id: "merge_type_block",
+        block_id: "master_case_block",
         label: {
           type: "plain_text",
-          text: "병합 방식"
+          text: "Master Case 선택"
         },
         element: {
           type: "static_select",
-          action_id: "merge_type",
-          options: [
-            {
-              text: { type: "plain_text", text: "현재 케이스만 병합" },
-              value: "current_only"
-            },
-            {
-              text: { type: "plain_text", text: "중복 후보 전체 병합" },
-              value: "merge_all"
-            }
-          ]
-        }
-      },
-      {
-        type: "input",
-        block_id: "case_select_block",
-        label: {
-          type: "plain_text",
-          text: "병합 대상 선택"
-        },
-        element: {
-          type: "checkboxes",
-          action_id: "selected_cases",
+          action_id: "master_case_select",
+          placeholder: {
+            type: "plain_text",
+            text: "Master Case를 선택하세요"
+          },
           options: duplicateResults.map((item) => ({
             text: {
               type: "plain_text",
@@ -144,7 +132,61 @@ function buildMergeModalView({ currentCase, duplicateResults }) {
   };
 }
 
+// 병합 실행 확인 모달
+function buildMergeConfirmModalView({
+  currentCaseId,
+  currentCaseNumber,
+  currentCaseSubject,
+  masterCaseNumber,
+  masterCaseText,
+  channelId
+}) {
+  return {
+    type: "modal",
+    callback_id: "merge_case_confirm_modal",
+    private_metadata: `${currentCaseId}|${masterCaseNumber}|${channelId}`,
+    title: {
+      type: "plain_text",
+      text: "병합 확인"
+    },
+    submit: {
+      type: "plain_text",
+      text: "병합 실행"
+    },
+    close: {
+      type: "plain_text",
+      text: "취소"
+    },
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            `*진짜 병합하시겠습니까?*\n` +
+            `*현재 Case의 상태가 Merged로 변경됩니다.*`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `현재 Case 정보:\nCase ${safe(currentCaseNumber)} - ${safe(currentCaseSubject)}`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `선택한 Master Case 정보:\n${safe(masterCaseText)}`
+        }
+      }
+    ]
+  };
+}
+
 module.exports = {
   buildStartCaseModalView,
-  buildMergeModalView
+  buildMergeModalView,
+  buildMergeConfirmModalView
 };

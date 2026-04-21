@@ -3,8 +3,10 @@ const { SF_BASE_URL } = require("../config/env");
 const {
   getSalesforceAccessToken,
   updateCaseStatus,
+  updateCaseMergedInto,
   sendCaseEmail,
   getCaseInfo,
+  getCaseInfoNumber,
   getAccountInfo,
   getOpenCaseCount,
   getAccountRecordUrl
@@ -29,13 +31,15 @@ const {
   buildNoDuplicateResultsMessage,
   buildDuplicateAnalysisErrorMessage,
   buildCaseStartedMessage,
+  buildCaseMergedMessage,
   buildNBASlackMessage
 } = require("../builders/slack.message.builder");
 const {
   buildStartCaseModalView,
-  buildMergeModalView
+  buildMergeModalView,
+  buildMergeConfirmModalView
 } = require("../builders/slack.modal.builder");
-const { text } = require("express");
+const { text, response } = require("express");
 
 // 액션 별 기능 정의
 // 버튼 기능: 고객 정보 보기, Case 처리 시작, 중복여부 확인, 병합하기기
@@ -251,13 +255,15 @@ async function handleSlackInteractions(req, res) {
         return;
       }
 
-      // 중복 확인 결과에서 병합 모달 오픈
+      // 병합 모달 오픈
       if (actionId === "open_merge_modal") {
         try {
           const data = JSON.parse(value);
+
           const view = buildMergeModalView({
             currentCase: data.currentCase,
-            duplicateResults: data.duplicateResults
+            duplicateResults: data.duplicateResults,
+            channelId: payload.channel.id
           });
           await openSlackView({
             triggerId: payload.trigger_id,
@@ -409,43 +415,116 @@ async function handleSlackInteractions(req, res) {
 
     // Case 시작 이메일 전송 완료 메세지
     if (payload.type === "view_submission") {
-      console.log("[SubmissionModal] view_submission 처리 시작");
-
       const callbackId = payload.view?.callback_id;
-      if (callbackId !== "start_case_modal") {
-        return res.status(200).json({ response_action: "clear" });
+      const privateMetadata = payload.view?.private_metadata || "";
+
+      if (callbackId === "start_case_modal") {
+        console.log("[StartCase] submission start");
+        const [caseId, channelId] = privateMetadata.split("|");
+
+        const values = payload.view?.state?.values || {};
+        const emailTo = values.email_block?.email_input?.value || "";
+        const emailSubject = values.subject_block?.subject_input?.value || "";
+        const emailBody = values.body_block?.body_input?.value || "";
+  
+        res.status(200).json({ response_action: "clear" });
+  
+        await updateCaseStatus(caseId, "Working");
+        await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
+  
+        const caseRecord = await getCaseInfo(caseId);
+        const caseNumber = caseRecord.CaseNumber;
+        const subject = caseRecord?.Subject || "";
+  
+        const messagePayload = buildCaseStartedMessage({
+          caseId,
+          caseNumber,
+          subject,
+          emailTo,
+          caseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${caseId}/view`
+        });
+        await postSlackMessage({
+          channel: channelId,
+          payload: messagePayload
+        });
+  
+        return;
       }
 
-      const privateMetadata = payload.view?.private_metadata || "";
-      const [caseId, channelId] = privateMetadata.split("|");
+      if (callbackId === "merge_case_modal") {
+        const meta = JSON.parse(privateMetadata || "{}");
+        const {
+          currentCaseId,
+          currentCaseNumber,
+          currentCaseSubject,
+          channelId
+        } = meta;
 
-      const values = payload.view?.state?.values || {};
-      const emailTo = values.email_block?.email_input?.value || "";
-      const emailSubject = values.subject_block?.subject_input?.value || "";
-      const emailBody = values.body_block?.body_input?.value || "";
+        const values = payload.view?.state?.values || {};
 
-      res.status(200).json({ response_action: "clear" });
+        const masterCaseNumber = values.master_case_block?.master_case_select?.selected_option?.value || "";
+        const masterCaseText = values.master_case_block?.master_case_select?.selected_option?.text?.text || "";
+        
+        if (!masterCaseNumber) {
+          return res.status(200).json({
+            response_action: "errors",
+            errors: {
+              master_case_block: "Master Case를 선택해주세요."
+            }
+          });
+        }
 
-      await updateCaseStatus(caseId, "Working");
-      await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
+        return res.status(200).json({
+          response_action: "update",
+          view: buildMergeConfirmModalView({
+            currentCaseId,
+            currentCaseNumber,
+            currentCaseSubject,
+            masterCaseNumber,
+            masterCaseText,
+            channelId
+          })
+        });
+      }
 
-      const caseRecord = await getCaseInfo(caseId);
-      const caseNumber = caseRecord.CaseNumber;
-      const subject = caseRecord?.Subject || "";
+      if (callbackId === "merge_case_confirm_modal") {
+        const [currentCaseId, masterCaseNumber, channelId] = (payload.view?.private_metadata || "").split("|");
 
-      const messagePayload = buildCaseStartedMessage({
-        caseId,
-        caseNumber,
-        subject,
-        emailTo,
-        caseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${caseId}/view`
-      });
-      await postSlackMessage({
-        channel: channelId,
-        payload: messagePayload
-      });
+        res.status(200).json({ response_action: "clear"});
+        
+        try {
+          const currentCase = await getCaseInfo(currentCaseId);
+          const masterCase = await getCaseInfoNumber(masterCaseNumber);
 
-      return;
+          await updateCaseStatus(currentCaseId, "Merged");
+          await updateCaseMergedInto(currentCaseId, masterCase.Id);
+
+          const messagePayload = buildCaseMergedMessage({
+            currentCase: {
+              caseNumber: currentCase.CaseNumber,
+              subject: currentCase.Subject,
+              status: "Merged"
+            },
+            masterCase: {
+              caseNumber: masterCase.CaseNumber,
+              subject: masterCase.Subject,
+              status: masterCase.Status
+            },
+            currentCaseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${currentCaseId}/view`,
+            msCaseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${masterCase.Id}/view`
+          });
+          await postSlackMessage({
+            channel: channelId,
+            payload: messagePayload
+          });
+
+          return;
+        } catch (error) {
+          console.log("[Merge Confirm] 에러 메시지:", error.message);
+          console.error("[Merge Confirm] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
+          return;
+        }
+      }
     }
 
     return res.status(200).send("ok");
