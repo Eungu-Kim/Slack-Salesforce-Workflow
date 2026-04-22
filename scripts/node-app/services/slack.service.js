@@ -62,8 +62,31 @@ async function openSlackView({ triggerId, view }) {
   return response.data;
 }
 
+async function openDmConversation(slackUserId) {
+  const response = await axios.post(
+    "https://slack.com/api/conversations.open",
+    {
+      users: slackUserId
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json; charset=utf-8"
+      }
+    }
+  );
+
+  console.log("conversations.open response:", JSON.stringify(response.data, null, 2));
+  if (!response.data.ok) {
+    throw new Error(`Slack DM 오픈 실패: ${response.data.error}`);
+  }
+
+  return response.data.channel?.id;
+}
+
 module.exports = {
   postSlackMessage,
   postToSlackResponseUrl,
-  openSlackView
+  openSlackView,
+  openDmConversation
 };

@@ -1,5 +1,131 @@
 const { safe, formatDate } = require("../utils/format.util");
 
+function withContext(context = {}, extra = {}) {
+  return JSON.stringify({
+    ...context,
+    ...extra
+  });
+}
+
+function buildCaseWorkspaceMessage({
+  currentCase,
+  account,
+  openCaseCount,
+  context
+}) {
+  const hasAccount = !!account;
+  const summary =
+    openCaseCount > 0
+      ? `현재 *미해결 Case ${openCaseCount}건*이 있습니다. 중복 문의 여부를 먼저 확인해보세요.`
+      : "현재 미해결 Case는 없습니다.";
+
+  const fields = [
+    {
+      type: "mrkdwn",
+      text: `*Case Number:*\n${safe(currentCase.CaseNumber)}`
+    },
+    {
+      type: "mrkdwn",
+      text: `*Status:*\n${safe(currentCase.Status)}`
+    },
+    {
+      type: "mrkdwn",
+      text: `*Subject:*\n${safe(currentCase.Subject)}`
+    },
+    {
+      type: "mrkdwn",
+      text: `*Priority:*\n${safe(currentCase.Priority)}`
+    },
+    {
+      type: "mrkdwn",
+      text: `*Account Name:*\n${safe(currentCase.Account?.Name || account?.Name)}`
+    }
+  ];
+
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "🧩 Case 작업 시작"
+      }
+    },
+    {
+      type: "section",
+      fields
+    },
+    {
+      type: "divider"
+    }
+  ];
+
+  if (hasAccount) {
+    blocks.push(
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*🏢 고객 정보*"
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Account Name:*\n${safe(account.Name)}` },
+          { type: "mrkdwn", text: `*Industry:*\n${safe(account.Industry)}` },
+          { type: "mrkdwn", text: `*Owner:*\n${safe(account.Owner?.Name)}` },
+          { type: "mrkdwn", text: `*Open Cases:*\n${openCaseCount}` }
+        ]
+      }
+    );
+  }
+
+  blocks.push(
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: summary
+      }
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          action_id: "check_duplicate",
+          text: {
+            type: "plain_text",
+            text: "중복여부 확인"
+          },
+          value: withContext(context, { action: "check_duplicate" })
+        },
+        {
+          type: "button",
+          action_id: "start_case",
+          style: "primary",
+          text: {
+            type: "plain_text",
+            text: "Case 처리 시작"
+          },
+          value: withContext(context, { action: "start_case" })
+        }
+      ]
+    }
+  );
+
+  return {
+    text: `Case 작업 시작 - ${safe(currentCase.CaseNumber)}`,
+    blocks
+  };
+}
+
+function buildCaseAssignedNoticeMessage({ caseNumber, slackUserId }) {
+  return {
+    text: `🧑‍💻 Case ${safe(caseNumber)} 담당: <@${slackUserId}>`
+  };
+}
+
 // 고객 정보 보기
 function buildAccountSlackMessage({
   account,
@@ -74,7 +200,8 @@ function buildAccountSlackMessage({
 function buildDuplicateAnalysisSlackMessage({
   currentCase,
   duplicateResults,
-  recommendedMaster
+  recommendedMaster,
+  context
 }) {
   const duplicateFields = duplicateResults.slice(0, 10).map((item) => ({
     type: "mrkdwn",
@@ -148,6 +275,7 @@ function buildDuplicateAnalysisSlackMessage({
             caseNumber: currentCase.caseNumber,
             subject: currentCase.subject
           },
+          context,
           duplicateResults: duplicateResults.map((item) => ({
             caseNumber: item.caseNumber,
             subject: item.subject,
@@ -161,8 +289,6 @@ function buildDuplicateAnalysisSlackMessage({
   });
 
   return {
-    response_type: "in_channel",
-    replace_original: false,
     text: `중복 분석 완료 - 현재 Case ${safe(currentCase.caseNumber)}`,
     blocks
   };
@@ -171,8 +297,6 @@ function buildDuplicateAnalysisSlackMessage({
 // 중복 분석 결과(No Candidate)
 function buildNoDuplicateCandidatesMessage() {
   return {
-    response_type: "in_channel",
-    replace_original: false,
     text: "중복 분석 결과: 후보 케이스가 없습니다.",
     blocks: [
       {
@@ -196,8 +320,6 @@ function buildNoDuplicateCandidatesMessage() {
 // 중복 분석 결과(실패)
 function buildDuplicateParseErrorMessage() {
   return {
-    response_type: "in_channel",
-    replace_original: false,
     text: "중복 분석 결과를 파싱하지 못했습니다.",
     blocks: [
       {
@@ -221,8 +343,6 @@ function buildDuplicateParseErrorMessage() {
 // 중복 분석 결과(No Duplication)
 function buildNoDuplicateResultsMessage({ currentCase }) {
   return {
-    response_type: "in_channel",
-    replace_original: false,
     text: "중복 가능 케이스가 없습니다.",
     blocks: [
       {
@@ -245,8 +365,6 @@ function buildNoDuplicateResultsMessage({ currentCase }) {
 // 중복 분석 결과(오류 발생)
 function buildDuplicateAnalysisErrorMessage({ errorMessage }) {
   return {
-    response_type: "in_channel",
-    replace_original: false,
     text: "중복 분석 중 오류가 발생했습니다.",
     blocks: [
       {
@@ -268,7 +386,7 @@ function buildDuplicateAnalysisErrorMessage({ errorMessage }) {
 }
 
 // Case 처리 완료 후속 메세지지
-function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRecordUrl }) {
+function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRecordUrl, context }) {
   return {
     text: "Case 처리 완료",
     blocks: [
@@ -323,7 +441,8 @@ function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRec
                 id: caseId,
                 caseNumber,
                 subject
-              }
+              },
+              context
             })
           }
         ]
@@ -332,6 +451,7 @@ function buildCaseStartedMessage({ caseId, caseNumber, subject, emailTo, caseRec
   };
 }
 
+// Agent 다음 행동 추천 후속 메세지
 function buildNBASlackMessage({ result }) {
   return {
     text: "Agent 다음 행동 추천 결과",
@@ -378,13 +498,79 @@ function buildNBASlackMessage({ result }) {
   };
 }
 
+// 병합 실행 후속 메세지
+function buildCaseMergedMessage({
+  currentCase,
+  masterCase,
+  currentCaseRecordUrl,
+  msCaseRecordUrl, 
+}) {
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "✅  Case 병합 완료"
+      }
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*현재 Case* ${safe(currentCase.caseNumber)} - ${safe(currentCase.subject)} / 상태: ${safe(currentCase.status)}`
+      }
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Master Case* ${safe(masterCase.caseNumber)} - ${safe(masterCase.subject)} / 상태: ${safe(masterCase.status)}`
+      }
+    }
+  ];
+
+  blocks.push({ type: "divider" });
+
+  blocks.push(
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "현재 Case 보기"
+          },
+          url: currentCaseRecordUrl
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Master Case 보기"
+          },
+          url: msCaseRecordUrl
+        }
+      ]
+    }
+  );
+
+  return {
+    text: `Case 병합 완료 - Master Case ${safe(masterCase.caseNumber)}`,
+    blocks
+  };
+}
+
 module.exports = {
   buildAccountSlackMessage,
+  buildCaseWorkspaceMessage,
+  buildCaseAssignedNoticeMessage,
   buildDuplicateAnalysisSlackMessage,
   buildNoDuplicateCandidatesMessage,
   buildDuplicateParseErrorMessage,
   buildNoDuplicateResultsMessage,
   buildDuplicateAnalysisErrorMessage,
   buildCaseStartedMessage,
-  buildNBASlackMessage
+  buildNBASlackMessage,
+  buildCaseMergedMessage
 };

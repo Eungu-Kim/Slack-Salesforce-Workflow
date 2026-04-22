@@ -3,11 +3,12 @@ const { SF_BASE_URL } = require("../config/env");
 const {
   getSalesforceAccessToken,
   updateCaseStatus,
+  updateCaseMergedInto,
   sendCaseEmail,
   getCaseInfo,
+  getCaseInfoNumber,
   getAccountInfo,
-  getOpenCaseCount,
-  getAccountRecordUrl
+  getOpenCaseCount
 } = require("../services/salesforce.service");
 const {
   getAgentforceAccessToken,
@@ -18,24 +19,34 @@ const {
 } = require("../services/agentforce.service");
 const {
   postSlackMessage,
-  postToSlackResponseUrl,
-  openSlackView
+  openSlackView,
+  openDmConversation
 } = require("../services/slack.service");
 const {
-  buildAccountSlackMessage,
+  buildCaseWorkspaceMessage,
+  buildCaseAssignedNoticeMessage,
   buildDuplicateAnalysisSlackMessage,
   buildNoDuplicateCandidatesMessage,
   buildDuplicateParseErrorMessage,
   buildNoDuplicateResultsMessage,
   buildDuplicateAnalysisErrorMessage,
   buildCaseStartedMessage,
+  buildCaseMergedMessage,
   buildNBASlackMessage
 } = require("../builders/slack.message.builder");
 const {
   buildStartCaseModalView,
-  buildMergeModalView
+  buildMergeModalView,
+  buildMergeConfirmModalView
 } = require("../builders/slack.modal.builder");
-const { text } = require("express");
+function parseJsonValue(value) {
+  if (!value || typeof value !== "string") return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
 
 // 액션 별 기능 정의
 // 버튼 기능: 고객 정보 보기, Case 처리 시작, 중복여부 확인, 병합하기기
@@ -60,38 +71,70 @@ async function handleSlackInteractions(req, res) {
       const value = action.value || "";
       console.log("actionId:", actionId);
       console.log("value:", value);
+      const parsedValue = parseJsonValue(value);
 
-      // 고객 정보 보기
-      if (actionId === "view_account") {
+      if (actionId === "take_case") {
         const parts = value.split("|");
         const caseId = parts[1] || "";
-        const accountId = parts[2] || "";
+        const caseNumberFromValue = parts[2] || "";
+        const slackUserId = payload.user?.id;
+        const originalChannelId = payload.channel?.id;
 
         res.status(200).send("ok");
 
         try {
-          console.log("[Account] view_account 처리 시작", { caseId, accountId });
-          const account = await getAccountInfo(accountId);
-          console.log("[Account] getAccountInfo 완료", JSON.stringify(account, null, 2));
+          console.log("[TakeCase] 담당하기 처리 시작", { caseId, slackUserId, originalChannelId });
+          const currentCase = await getCaseInfo(caseId);
+          const caseNumber = currentCase?.CaseNumber || caseNumberFromValue;
 
-          const openCaseCount = await getOpenCaseCount(accountId);
-          console.log("[Account] getOpenCaseCount 완료", openCaseCount);
+          let account = null;
+          let openCaseCount = 0;
+          if (currentCase?.AccountId) {
+            account = await getAccountInfo(currentCase.AccountId);
+            openCaseCount = await getOpenCaseCount(currentCase.AccountId);
+          }
 
-          const messagePayload = buildAccountSlackMessage({
+          const dmChannelId = await openDmConversation(slackUserId);
+          if (!dmChannelId) {
+            throw new Error("DM channel id를 받지 못했습니다.");
+          }
+
+          const workspacePayload = buildCaseWorkspaceMessage({
+            currentCase,
             account,
             openCaseCount,
-            accountRecordUrl: getAccountRecordUrl(account.Id)
+            context: {
+              caseId,
+              caseNumber,
+              subject: currentCase?.Subject || "",
+              accountId: currentCase?.AccountId || "",
+              originalChannelId,
+              dmChannelId
+            }
           });
-          console.log("[Account] Slack 메시지 payload 생성 완료", JSON.stringify(messagePayload, null, 2));
 
-          const result = await postSlackMessage({
-            channel: payload.channel.id,
-            payload: messagePayload
+          const dmResult = await postSlackMessage({
+            channel: dmChannelId,
+            payload: workspacePayload
           });
-          console.log("[Account] Slack 전송 응답:", JSON.stringify(result, null, 2));
+          const threadTs = dmResult?.ts;
+          if (!threadTs) {
+            throw new Error("DM 작업 메시지 ts를 받지 못했습니다.");
+          }
+
+          const noticePayload = buildCaseAssignedNoticeMessage({
+            caseNumber,
+            slackUserId
+          });
+          await postSlackMessage({
+            channel: originalChannelId,
+            payload: noticePayload
+          });
+
+          console.log("[TakeCase] DM 작업공간 생성 완료", { dmChannelId, threadTs, caseId });
         } catch (error) {
-          console.error("[Account] 에러 메시지:", error.message);
-          console.error("[Account] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
+          console.error("[TakeCase] 에러 메시지:", error.message);
+          console.error("[TakeCase] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
         }
 
         return;
@@ -99,8 +142,10 @@ async function handleSlackInteractions(req, res) {
 
       // Case 처리 시작
       if (actionId === "start_case") {
-        const parts = value.split("|");
-        const caseId = parts[1] || "";
+        const caseId = parsedValue.caseId || value.split("|")[1] || "";
+        const dmChannelId = parsedValue.dmChannelId || payload.channel?.id;
+        const originalChannelId = parsedValue.originalChannelId || "";
+        const threadTs = payload.message?.thread_ts || payload.message?.ts || parsedValue.threadTs || "";
         const caseRecord = await getCaseInfo(caseId);
         const caseNumber = caseRecord.CaseNumber;
         const defaultEmail = caseRecord?.ContactEmail || "";
@@ -110,7 +155,9 @@ async function handleSlackInteractions(req, res) {
 
         const view = buildStartCaseModalView({
           caseId,
-          channelId: payload.channel.id,
+          originalChannelId,
+          dmChannelId,
+          threadTs,
           caseNumber,
           defaultEmail,
           defaultSubject,
@@ -126,16 +173,19 @@ async function handleSlackInteractions(req, res) {
 
       // 중복 여부 확인
       if (actionId === "check_duplicate") {
-        await postToSlackResponseUrl({
-          responseUrl: payload.response_url,
+        const caseId = parsedValue.caseId || value.split("|")[1] || "";
+        const dmChannelId = parsedValue.dmChannelId || payload.channel?.id;
+        const threadTs = payload.message?.thread_ts || payload.message?.ts || parsedValue.threadTs || "";
+        const originalChannelId = parsedValue.originalChannelId || "";
+
+        await postSlackMessage({
+          channel: dmChannelId,
           payload: {
-          response_type: "in_channel",
-          replace_original: false,
-          text: "🔍 중복 분석 중입니다... 완료 후 결과를 안내드립니다."
+            text: "🔍 중복 분석 중입니다... 완료 후 결과를 안내드립니다.",
+            thread_ts: threadTs
           }
         });
 
-        const caseId = value.split("|")[1] || "";
         console.log("[Duplicate] 중복 확인 시작 caseId:", caseId);
 
         res.status(200).send("ok");
@@ -157,9 +207,12 @@ async function handleSlackInteractions(req, res) {
           const { currentCase, candidates } = sfResponse.data;
 
           if (!candidates || !candidates.length) {
-            await postToSlackResponseUrl({
-              responseUrl: payload.response_url,
-              payload: buildNoDuplicateCandidatesMessage()
+            await postSlackMessage({
+              channel: dmChannelId,
+              payload: {
+                ...buildNoDuplicateCandidatesMessage(),
+                thread_ts: threadTs
+              }
             });
             return;
           }
@@ -197,9 +250,12 @@ async function handleSlackInteractions(req, res) {
           const parsedResult = extractDuplicateAnalysisFromAgentResponse(agentResponse);
 
           if (!parsedResult || !parsedResult.results || !parsedResult.results.length) {
-            await postToSlackResponseUrl({
-              responseUrl: payload.response_url,
-              payload: buildDuplicateParseErrorMessage()
+            await postSlackMessage({
+              channel: dmChannelId,
+              payload: {
+                ...buildDuplicateParseErrorMessage(),
+                thread_ts: threadTs
+              }
             });
             return;
           }
@@ -218,9 +274,12 @@ async function handleSlackInteractions(req, res) {
             });
 
           if (!duplicateResults.length) {
-            await postToSlackResponseUrl({
-              responseUrl: payload.response_url,
-              payload: buildNoDuplicateResultsMessage({ currentCase })
+            await postSlackMessage({
+              channel: dmChannelId,
+              payload: {
+                ...buildNoDuplicateResultsMessage({ currentCase }),
+                thread_ts: threadTs
+              }
             });
             return;
           }
@@ -229,35 +288,56 @@ async function handleSlackInteractions(req, res) {
           const resultPayload = buildDuplicateAnalysisSlackMessage({
             currentCase,
             duplicateResults,
-            recommendedMaster
+            recommendedMaster,
+            context: {
+              caseId,
+              caseNumber: currentCase.caseNumber,
+              subject: currentCase.subject,
+              accountId: currentCase.accountId || "",
+              originalChannelId,
+              dmChannelId,
+              threadTs
+            }
           });
 
-          await postToSlackResponseUrl({
-            responseUrl: payload.response_url,
-            payload: resultPayload
+          await postSlackMessage({
+            channel: dmChannelId,
+            payload: {
+              ...resultPayload,
+              thread_ts: threadTs
+            }
           });
         } catch (error) {
           console.error("[Duplicate] 에러 메시지:", error.message);
           console.error("[Duplicate] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
 
-          await postToSlackResponseUrl({
-            responseUrl: payload.response_url,
-            payload: buildDuplicateAnalysisErrorMessage({
-              errorMessage: error.message
-            })
+          await postSlackMessage({
+            channel: dmChannelId,
+            payload: {
+              ...buildDuplicateAnalysisErrorMessage({
+                errorMessage: error.message
+              }),
+              thread_ts: threadTs
+            }
           });
         }
 
         return;
       }
 
-      // 중복 확인 결과에서 병합 모달 오픈
+      // 병합 모달 오픈
       if (actionId === "open_merge_modal") {
         try {
-          const data = JSON.parse(value);
+          const data = parseJsonValue(value);
+          const context = data.context || {};
+
           const view = buildMergeModalView({
             currentCase: data.currentCase,
-            duplicateResults: data.duplicateResults
+            duplicateResults: data.duplicateResults,
+            context: {
+              ...context,
+              threadTs: payload.message?.thread_ts || payload.message?.ts || context.threadTs || ""
+            }
           });
           await openSlackView({
             triggerId: payload.trigger_id,
@@ -274,13 +354,18 @@ async function handleSlackInteractions(req, res) {
       // Agent 다음 행동 추천
       if (actionId === "recommend_next_action") {
         console.log("[NextAction] recommend_next_action 처리 시작");
+        const dmChannelId = parsedValue?.context?.dmChannelId || payload.channel?.id;
+        const threadTs =
+          payload.message?.thread_ts ||
+          payload.message?.ts ||
+          parsedValue?.context?.threadTs ||
+          "";
 
-        await postToSlackResponseUrl({
-          responseUrl: payload.response_url,
+        await postSlackMessage({
+          channel: dmChannelId,
           payload: {
-            response_type: "in_channel",
-            replace_original: false,
-            text: "🤖 다음 행동을 분석 중입니다... 완료 후 결과를 안내드립니다."
+            text: "🤖 다음 행동을 분석 중입니다... 완료 후 결과를 안내드립니다.",
+            thread_ts: threadTs
           }
         });
 
@@ -288,7 +373,7 @@ async function handleSlackInteractions(req, res) {
 
         try {
           console.log("요청 payload 파싱 시작");
-          const data = JSON.parse(value || "{}");
+          const data = parseJsonValue(value || "{}");
           const currentCaseFromSlack = data.currentCase || {};
           const caseId = currentCaseFromSlack.id || "";
 
@@ -364,8 +449,11 @@ async function handleSlackInteractions(req, res) {
           console.log("Slack 메시지 payload:", JSON.stringify(messagePayload, null, 2));
 
           const slackResult = await postSlackMessage({
-            channel: payload.channel.id,
-            payload: messagePayload
+            channel: dmChannelId,
+            payload: {
+              ...messagePayload,
+              thread_ts: threadTs
+            }
           });
           console.log("Slack 전송 응답:", JSON.stringify(slackResult, null, 2));
 
@@ -375,12 +463,11 @@ async function handleSlackInteractions(req, res) {
           console.error("[NextAction] 에러 스택:", error.stack);
           console.error("[NextAction] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
 
-          await postToSlackResponseUrl({
-            responseUrl: payload.response_url,
+          await postSlackMessage({
+            channel: dmChannelId,
             payload: {
-              response_type: "in_channel",
-              replace_original: false,
               text: "다음 행동 추천 중 오류가 발생했습니다.",
+              thread_ts: threadTs,
               blocks: [
                 {
                   type: "header",
@@ -409,43 +496,143 @@ async function handleSlackInteractions(req, res) {
 
     // Case 시작 이메일 전송 완료 메세지
     if (payload.type === "view_submission") {
-      console.log("[SubmissionModal] view_submission 처리 시작");
-
       const callbackId = payload.view?.callback_id;
-      if (callbackId !== "start_case_modal") {
-        return res.status(200).json({ response_action: "clear" });
+      const privateMetadata = payload.view?.private_metadata || "";
+
+      if (callbackId === "start_case_modal") {
+        console.log("[StartCase] submission start");
+        const meta = parseJsonValue(privateMetadata);
+        const caseId = meta.caseId || "";
+        const dmChannelId = meta.dmChannelId || payload.user?.id || "";
+        const threadTs = meta.threadTs || "";
+        const originalChannelId = meta.originalChannelId || "";
+
+        const values = payload.view?.state?.values || {};
+        const emailTo = values.email_block?.email_input?.value || "";
+        const emailSubject = values.subject_block?.subject_input?.value || "";
+        const emailBody = values.body_block?.body_input?.value || "";
+  
+        res.status(200).json({ response_action: "clear" });
+  
+        await updateCaseStatus(caseId, "Working");
+        await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
+  
+        const caseRecord = await getCaseInfo(caseId);
+        const caseNumber = caseRecord.CaseNumber;
+        const subject = caseRecord?.Subject || "";
+  
+        const messagePayload = buildCaseStartedMessage({
+          caseId,
+          caseNumber,
+          subject,
+          emailTo,
+          caseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${caseId}/view`,
+          context: {
+            caseId,
+            caseNumber,
+            subject,
+            accountId: caseRecord?.AccountId || "",
+            originalChannelId,
+            dmChannelId,
+            threadTs
+          }
+        });
+        await postSlackMessage({
+          channel: dmChannelId,
+          payload: {
+            ...messagePayload,
+            thread_ts: threadTs
+          }
+        });
+  
+        return;
       }
 
-      const privateMetadata = payload.view?.private_metadata || "";
-      const [caseId, channelId] = privateMetadata.split("|");
+      if (callbackId === "merge_case_modal") {
+        const meta = parseJsonValue(privateMetadata || "{}");
+        const {
+          currentCaseId,
+          currentCaseNumber,
+          currentCaseSubject,
+          originalChannelId,
+          dmChannelId,
+          threadTs
+        } = meta;
 
-      const values = payload.view?.state?.values || {};
-      const emailTo = values.email_block?.email_input?.value || "";
-      const emailSubject = values.subject_block?.subject_input?.value || "";
-      const emailBody = values.body_block?.body_input?.value || "";
+        const values = payload.view?.state?.values || {};
 
-      res.status(200).json({ response_action: "clear" });
+        const masterCaseNumber = values.master_case_block?.master_case_select?.selected_option?.value || "";
+        const masterCaseText = values.master_case_block?.master_case_select?.selected_option?.text?.text || "";
+        
+        if (!masterCaseNumber) {
+          return res.status(200).json({
+            response_action: "errors",
+            errors: {
+              master_case_block: "Master Case를 선택해주세요."
+            }
+          });
+        }
 
-      await updateCaseStatus(caseId, "Working");
-      await sendCaseEmail(caseId, emailTo, emailSubject, emailBody);
+        return res.status(200).json({
+          response_action: "update",
+          view: buildMergeConfirmModalView({
+            currentCaseId,
+            currentCaseNumber,
+            currentCaseSubject,
+            masterCaseNumber,
+            masterCaseText,
+            originalChannelId,
+            dmChannelId,
+            threadTs
+          })
+        });
+      }
 
-      const caseRecord = await getCaseInfo(caseId);
-      const caseNumber = caseRecord.CaseNumber;
-      const subject = caseRecord?.Subject || "";
+      if (callbackId === "merge_case_confirm_modal") {
+        const confirmMeta = parseJsonValue(payload.view?.private_metadata || "{}");
+        const currentCaseId = confirmMeta.currentCaseId || "";
+        const masterCaseNumber = confirmMeta.masterCaseNumber || "";
+        const dmChannelId = confirmMeta.dmChannelId || payload.user?.id || "";
+        const threadTs = confirmMeta.threadTs || "";
 
-      const messagePayload = buildCaseStartedMessage({
-        caseId,
-        caseNumber,
-        subject,
-        emailTo,
-        caseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${caseId}/view`
-      });
-      await postSlackMessage({
-        channel: channelId,
-        payload: messagePayload
-      });
+        res.status(200).json({ response_action: "clear"});
+        
+        try {
+          const currentCase = await getCaseInfo(currentCaseId);
+          const masterCase = await getCaseInfoNumber(masterCaseNumber);
 
-      return;
+          await updateCaseStatus(currentCaseId, "Merged");
+          await updateCaseMergedInto(currentCaseId, masterCase.Id);
+
+          const messagePayload = buildCaseMergedMessage({
+            currentCase: {
+              caseNumber: currentCase.CaseNumber,
+              subject: currentCase.Subject,
+              status: "Merged"
+            },
+            masterCase: {
+              caseNumber: masterCase.CaseNumber,
+              subject: masterCase.Subject,
+              status: masterCase.Status
+            },
+            currentCaseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${currentCaseId}/view`,
+            msCaseRecordUrl: `${SF_BASE_URL}/lightning/r/Case/${masterCase.Id}/view`
+          });
+          await postSlackMessage({
+            channel: dmChannelId,
+            payload: {
+              ...messagePayload,
+              thread_ts: threadTs
+            }
+          });
+
+          return;
+        } catch (error) {
+          console.log("[Merge Confirm] 에러 메시지:", error.message);
+          console.error("[Merge Confirm] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
+          return;
+        }
+      }
     }
 
     return res.status(200).send("ok");
