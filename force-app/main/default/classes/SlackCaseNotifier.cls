@@ -93,43 +93,19 @@ public with sharing class SlackCaseNotifier {
             'type' => 'divider'
         });
 
-        List<Object> actions = new List<Object>();
-
-        if (c.AccountId != null) {
-            actions.add(new Map<String, Object>{
+        List<Object> actions = new List<Object>{
+            new Map<String, Object>{
                 'type' => 'button',
-                'action_id' => 'view_account',
+                'action_id' => 'take_case',
                 'text' => new Map<String, Object>{
                     'type' => 'plain_text',
-                    'text' => '고객 정보 보기',
+                    'text' => '담당하기',
                     'emoji' => true
                 },
                 'style' => 'primary',
-                'value' => 'view_account|' + c.Id + '|' + c.AccountId
-            });
-        }
-
-        actions.add(new Map<String, Object>{
-            'type' => 'button',
-            'action_id' => 'start_case',
-            'text' => new Map<String, Object>{
-                'type' => 'plain_text',
-                'text' => 'Case 처리 시작',
-                'emoji' => true
-            },
-            'value' => 'start_case|' + c.Id
-        });
-
-        actions.add(new Map<String, Object> {
-            'type' => 'button',
-            'action_id' => 'check_duplicate',
-            'text' => new Map<String, Object>{
-                'type' => 'plain_text',
-                'text' => '중복여부 확인',
-                'emoji' => true
-            },
-            'value' => 'check_duplicate|' + c.Id
-        });
+                'value' => 'take_case|' + c.Id + '|' + safe(c.CaseNumber)
+            }
+        };
 
         blocks.add(new Map<String, Object>{
             'type' => 'actions',

@@ -93,7 +93,7 @@ async function getCaseInfo(caseId) {
       },
       params: {
         q: `
-          SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status
+          SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status, Priority, Account.Name
           FROM Case
           WHERE Id = '${caseId}'
           LIMIT 1

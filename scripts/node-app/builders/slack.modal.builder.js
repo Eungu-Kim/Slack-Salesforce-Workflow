@@ -3,7 +3,9 @@ const { safe } = require("../utils/format.util");
 // Case 처리 Email 전송 모달
 function buildStartCaseModalView({
   caseId,
-  channelId,
+  originalChannelId,
+  dmChannelId,
+  threadTs,
   caseNumber,
   defaultEmail,
   defaultSubject,
@@ -12,7 +14,13 @@ function buildStartCaseModalView({
   return {
     type: "modal",
     callback_id: "start_case_modal",
-    private_metadata: `${caseId}|${channelId}`,
+    private_metadata: JSON.stringify({
+      caseId,
+      originalChannelId,
+      dmChannelId,
+      threadTs,
+      caseNumber
+    }),
     title: {
       type: "plain_text",
       text: "Case 처리 시작"
@@ -75,7 +83,7 @@ function buildStartCaseModalView({
 }
 
 // 병합 Master 선택 모달
-function buildMergeModalView({ currentCase, duplicateResults, channelId }) {
+function buildMergeModalView({ currentCase, duplicateResults, context }) {
   return {
     type: "modal",
     callback_id: "merge_case_modal",
@@ -83,7 +91,7 @@ function buildMergeModalView({ currentCase, duplicateResults, channelId }) {
       currentCaseId: currentCase.id,
       currentCaseNumber: currentCase.caseNumber,
       currentCaseSubject: currentCase.subject,
-      channelId
+      ...context
     }),
     title: {
       type: "plain_text",
@@ -139,12 +147,20 @@ function buildMergeConfirmModalView({
   currentCaseSubject,
   masterCaseNumber,
   masterCaseText,
-  channelId
+  originalChannelId,
+  dmChannelId,
+  threadTs
 }) {
   return {
     type: "modal",
     callback_id: "merge_case_confirm_modal",
-    private_metadata: `${currentCaseId}|${masterCaseNumber}|${channelId}`,
+    private_metadata: JSON.stringify({
+      currentCaseId,
+      masterCaseNumber,
+      originalChannelId,
+      dmChannelId,
+      threadTs
+    }),
     title: {
       type: "plain_text",
       text: "병합 확인"
