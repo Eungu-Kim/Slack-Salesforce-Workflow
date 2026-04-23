@@ -4,11 +4,15 @@ const {
   getSalesforceAccessToken,
   updateCaseStatus,
   updateCaseMergedInto,
+  updateCaseOwner,
   sendCaseEmail,
   getCaseInfo,
   getCaseInfoNumber,
   getAccountInfo,
-  getOpenCaseCount
+  getOpenCaseCount,
+  selectRecommendedMasterCase,
+  getSalesforceUserByEmail,
+  isUserMember
 } = require("../services/salesforce.service");
 const {
   getAgentforceAccessToken,
@@ -20,7 +24,8 @@ const {
 const {
   postSlackMessage,
   openSlackView,
-  openDmConversation
+  openDmConversation,
+  getEmailFromSlack
 } = require("../services/slack.service");
 const {
   buildCaseWorkspaceMessage,
@@ -37,20 +42,17 @@ const {
 const {
   buildStartCaseModalView,
   buildMergeModalView,
-  buildMergeConfirmModalView
+  buildMergeConfirmModalView,
+  buildTakeCaseErrorModalView,
+  openTakeCaseErrorModal
 } = require("../builders/slack.modal.builder");
-function parseJsonValue(value) {
-  if (!value || typeof value !== "string") return {};
-  try {
-    return JSON.parse(value);
-  } catch {
-    return {};
-  }
-}
+const {
+  parseJsonValue
+} = require("../utils/format.util");
 
-// 액션 별 기능 정의
-// 버튼 기능: 고객 정보 보기, Case 처리 시작, 중복여부 확인, 병합하기기
-// 후처리 기능: Case 시작 이메일 전송 완료
+// 기능 정의
+// 버튼: 담당하기, Case 처리 시작, 중복여부 확인, 병합하기, Agent 다음 행동 추천
+// 후처리: Case 시작 이메일 전송 모달 + 완료 메세지, 병합 확인 모달 + 완료 메세지
 async function handleSlackInteractions(req, res) {
   try {
     if (!req.body.payload) {
@@ -62,7 +64,7 @@ async function handleSlackInteractions(req, res) {
     console.log(JSON.stringify(payload, null, 2));
 
     if (payload.type === "block_actions") {
-      const action = payload.actions && payload.actions[0];
+      const action = payload.actions?.[0];
       if (!action) {
         return res.status(400).send("No action found");
       }
@@ -73,6 +75,7 @@ async function handleSlackInteractions(req, res) {
       console.log("value:", value);
       const parsedValue = parseJsonValue(value);
 
+      // 담당하기 
       if (actionId === "take_case") {
         const parts = value.split("|");
         const caseId = parts[1] || "";
@@ -83,8 +86,72 @@ async function handleSlackInteractions(req, res) {
         res.status(200).send("ok");
 
         try {
+          if (!caseId) {
+            await openSlackView({
+              triggerId: payload.trigger_id,
+              view: buildTakeCaseErrorModalView({
+                errorType: "no_caseId",
+                context: {
+                  slackUserId
+                }
+              })
+            });
+            throw new Error("caseId가 없습니다.");
+          }
+  
+          if (!slackUserId) {
+            throw new Error("slackUserId가 없습니다.");
+          }
+
           console.log("[TakeCase] 담당하기 처리 시작", { caseId, slackUserId, originalChannelId });
+          const slackUserEmail = await getEmailFromSlack(slackUserId);
+          if (!slackUserEmail) {
+            await openSlackView({
+              triggerId: payload.trigger_id,
+              view: buildTakeCaseErrorModalView({
+                errorType: "get_slack_email_error",
+                context: {
+                  caseId,
+                  slackUserId
+                }
+              })
+            });
+            throw new Error("Slack 사용자 이메일 조회 실패");
+          }
+
+          const salesforceUser = await getSalesforceUserByEmail(slackUserEmail);
+          if (!salesforceUser) {
+            await open
+            await openSlackView({
+              triggerId: payload.trigger_id,
+              view: buildTakeCaseErrorModalView({
+                errorType: "not_in_salesforceUser",
+                context: {
+                  slackUserId,
+                  slackUserEmail
+                }
+              })
+            });
+            throw new Error("Salesforce 사용자 확인 실패");
+          }
+
           const currentCase = await getCaseInfo(caseId);
+          const isQueueMember = await isUserMember(currentCase.OwnerId, salesforceUser.Id);
+
+          if (!isQueueMember) {
+            await openSlackView({
+              triggerId: payload.trigger_id,
+              view: buildTakeCaseErrorModalView({
+                errorType: "not_in_queue",
+                context: {
+                  slackUserId,
+                  slackUserEmail,
+                  salesforceUserId: salesforceUser.Id
+                }
+              })
+            });
+            throw new Error("해당 Queue의 멤버가 아닙니다.");
+          }
           const caseNumber = currentCase?.CaseNumber || caseNumberFromValue;
 
           let account = null;
@@ -130,8 +197,14 @@ async function handleSlackInteractions(req, res) {
             channel: originalChannelId,
             payload: noticePayload
           });
-
           console.log("[TakeCase] DM 작업공간 생성 완료", { dmChannelId, threadTs, caseId });
+          
+          await updateCaseOwner({
+            caseId,
+            salesforceUserId: salesforceUser.Id
+          });
+          console.log("[TakeCase] Owner 변경 완료");
+
         } catch (error) {
           console.error("[TakeCase] 에러 메시지:", error.message);
           console.error("[TakeCase] 에러 응답:", JSON.stringify(error.response?.data, null, 2));
@@ -325,7 +398,7 @@ async function handleSlackInteractions(req, res) {
         return;
       }
 
-      // 병합 모달 오픈
+      // 병합 하기
       if (actionId === "open_merge_modal") {
         try {
           const data = parseJsonValue(value);
@@ -494,11 +567,11 @@ async function handleSlackInteractions(req, res) {
       return res.status(200).send("ok");
     }
 
-    // Case 시작 이메일 전송 완료 메세지
     if (payload.type === "view_submission") {
       const callbackId = payload.view?.callback_id;
       const privateMetadata = payload.view?.private_metadata || "";
 
+      // Case 시작 이메일 전송 모달 + 완료 메세지
       if (callbackId === "start_case_modal") {
         console.log("[StartCase] submission start");
         const meta = parseJsonValue(privateMetadata);
@@ -548,6 +621,7 @@ async function handleSlackInteractions(req, res) {
         return;
       }
 
+      // 병합 하기 모달 + 확인 모달 오픈
       if (callbackId === "merge_case_modal") {
         const meta = parseJsonValue(privateMetadata || "{}");
         const {
@@ -588,6 +662,7 @@ async function handleSlackInteractions(req, res) {
         });
       }
 
+      // 병합 확인 모달
       if (callbackId === "merge_case_confirm_modal") {
         const confirmMeta = parseJsonValue(payload.view?.private_metadata || "{}");
         const currentCaseId = confirmMeta.currentCaseId || "";
@@ -642,35 +717,6 @@ async function handleSlackInteractions(req, res) {
       return res.status(500).send("Server error");
     }
   }
-}
-
-// 후보 Case 선택
-function selectRecommendedMasterCase(candidates, duplicateResults) {
-  const duplicateCaseNumbers = new Set(
-    duplicateResults.map((item) => item.caseNumber)
-  );
-
-  const matchedCandidates = candidates.filter((candidate) =>
-    duplicateCaseNumbers.has(candidate.caseNumber)
-  );
-
-  if (!matchedCandidates.length) {
-    return null;
-  }
-
-  const workingCases = matchedCandidates
-    .filter((c) => c.status === "Working")
-    .sort((a, b) => new Date(a.createdDate) - new Date(b.createdDate));
-
-  if (workingCases.length) {
-    return workingCases[0];
-  }
-
-  const newCases = matchedCandidates
-    .filter((c) => c.status === "New")
-    .sort((a, b) => new Date(a.createdDate) - new Date(b.createdDate));
-
-  return newCases.length ? newCases[0] : null;
 }
 
 module.exports = {

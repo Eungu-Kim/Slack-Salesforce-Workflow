@@ -43,6 +43,7 @@ async function postToSlackResponseUrl({ responseUrl, payload }) {
   return response.data;
 }
 
+// 모달 오픈 -> triggerd_id(몇 초안에 만료)
 async function openSlackView({ triggerId, view }) {
   const response = await axios.post(
     "https://slack.com/api/views.open",
@@ -62,6 +63,7 @@ async function openSlackView({ triggerId, view }) {
   return response.data;
 }
 
+// DM 오픈 -> DM Channel id return
 async function openDmConversation(slackUserId) {
   const response = await axios.post(
     "https://slack.com/api/conversations.open",
@@ -84,9 +86,32 @@ async function openDmConversation(slackUserId) {
   return response.data.channel?.id;
 }
 
+// Slack User Email 조회
+async function getEmailFromSlack(slackUserId) {
+  const response = await axios.get(
+    "https://slack.com/api/users.profile.get",
+    {
+      headers: {
+        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      params: {
+        user: slackUserId
+      }
+    }
+  );
+
+  console.log("users.profile.get response:", JSON.stringify(response.data, null, 2));
+  if (!response.data.ok) {
+    throw new Error(`Slack User Email 조회 실패: ${response.data.error}`);
+  }
+  return response.data.profile?.email || "";
+}
+
 module.exports = {
   postSlackMessage,
   postToSlackResponseUrl,
   openSlackView,
-  openDmConversation
+  openDmConversation,
+  getEmailFromSlack
 };

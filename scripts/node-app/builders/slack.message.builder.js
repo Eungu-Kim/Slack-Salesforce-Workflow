@@ -120,81 +120,82 @@ function buildCaseWorkspaceMessage({
   };
 }
 
+// 담당하기 완료 메세지 
 function buildCaseAssignedNoticeMessage({ caseNumber, slackUserId }) {
   return {
     text: `🧑‍💻 Case ${safe(caseNumber)} 담당: <@${slackUserId}>`
   };
 }
 
-// 고객 정보 보기
-function buildAccountSlackMessage({
-  account,
-  openCaseCount,
-  accountRecordUrl
-}) {
-  const summary =
-    openCaseCount > 0
-      ? `현재 *미해결 Case ${openCaseCount}건*이 있습니다. 중복 문의 여부를 확인해보세요.`
-      : "현재 미해결 Case는 없습니다.";
+// // 고객 정보 보기
+// function buildAccountSlackMessage({
+//   account,
+//   openCaseCount,
+//   accountRecordUrl
+// }) {
+//   const summary =
+//     openCaseCount > 0
+//       ? `현재 *미해결 Case ${openCaseCount}건*이 있습니다. 중복 문의 여부를 확인해보세요.`
+//       : "현재 미해결 Case는 없습니다.";
 
-  return {
-    text: `고객 정보 - ${safe(account.Name)} / Industry: ${safe(account.Industry)} / Owner: ${safe(account.Owner?.Name)} / Open Cases: ${openCaseCount}`,
-    blocks: [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "🏢 고객 정보"
-        }
-      },
-      {
-        type: "section",
-        fields: [
-          {
-            type: "mrkdwn",
-            text: `*Account Name:*\n${safe(account.Name)}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*Industry:*\n${safe(account.Industry)}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*Owner:*\n${safe(account.Owner?.Name)}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*Open Cases:*\n${openCaseCount}`
-          }
-        ]
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: summary
-        }
-      },
-      {
-        type: "divider"
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Salesforce에서 보기",
-              emoji: true
-            },
-            url: accountRecordUrl
-          }
-        ]
-      }
-    ]
-  };
-}
+//   return {
+//     text: `고객 정보 - ${safe(account.Name)} / Industry: ${safe(account.Industry)} / Owner: ${safe(account.Owner?.Name)} / Open Cases: ${openCaseCount}`,
+//     blocks: [
+//       {
+//         type: "header",
+//         text: {
+//           type: "plain_text",
+//           text: "🏢 고객 정보"
+//         }
+//       },
+//       {
+//         type: "section",
+//         fields: [
+//           {
+//             type: "mrkdwn",
+//             text: `*Account Name:*\n${safe(account.Name)}`
+//           },
+//           {
+//             type: "mrkdwn",
+//             text: `*Industry:*\n${safe(account.Industry)}`
+//           },
+//           {
+//             type: "mrkdwn",
+//             text: `*Owner:*\n${safe(account.Owner?.Name)}`
+//           },
+//           {
+//             type: "mrkdwn",
+//             text: `*Open Cases:*\n${openCaseCount}`
+//           }
+//         ]
+//       },
+//       {
+//         type: "section",
+//         text: {
+//           type: "mrkdwn",
+//           text: summary
+//         }
+//       },
+//       {
+//         type: "divider"
+//       },
+//       {
+//         type: "actions",
+//         elements: [
+//           {
+//             type: "button",
+//             text: {
+//               type: "plain_text",
+//               text: "Salesforce에서 보기",
+//               emoji: true
+//             },
+//             url: accountRecordUrl
+//           }
+//         ]
+//       }
+//     ]
+//   };
+// }
 
 // 중복 분석 결과
 function buildDuplicateAnalysisSlackMessage({
@@ -234,7 +235,7 @@ function buildDuplicateAnalysisSlackMessage({
       text: {
         type: "mrkdwn",
         text:
-          `*추천 기준 Case* ${safe(recommendedMaster.caseNumber)} - ${safe(recommendedMaster.subject)}\n` +
+          `*추천 Master Case* ${safe(recommendedMaster.caseNumber)} - ${safe(recommendedMaster.subject)}\n` +
           `상태: ${safe(recommendedMaster.status)} | 생성일: ${formatDate(recommendedMaster.createdDate)}`
       }
     });
@@ -248,7 +249,7 @@ function buildDuplicateAnalysisSlackMessage({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*후보 Case* (최대 6개 출력)"
+          text: "*후보 Master Case* (최대 6개 출력)"
         }
       },
       {
@@ -562,7 +563,7 @@ function buildCaseMergedMessage({
 }
 
 module.exports = {
-  buildAccountSlackMessage,
+  // buildAccountSlackMessage,
   buildCaseWorkspaceMessage,
   buildCaseAssignedNoticeMessage,
   buildDuplicateAnalysisSlackMessage,

@@ -44,6 +44,21 @@ async function updateCaseStatus(caseId, status) {
   );
 }
 
+// Case Owner 변경
+async function updateCaseOwner({ caseId, salesforceUserId }) {
+  const sfAccessToken = await getSalesforceAccessToken();
+  await axios.patch(
+    `${SF_BASE_URL}/services/data/${SF_API_VERSION}/sobjects/Case/${caseId}`,
+    { OwnerId: salesforceUserId},
+    {
+      headers: {
+        Authorization: `Bearer ${sfAccessToken}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+}
+
 // Case Merged_Into__c 변경
 async function updateCaseMergedInto(caseId, masterCaseId) {
   const sfAccessToken = await getSalesforceAccessToken();
@@ -93,7 +108,7 @@ async function getCaseInfo(caseId) {
       },
       params: {
         q: `
-          SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status, Priority, Account.Name
+          SELECT Id, CaseNumber, Subject, ContactEmail, AccountId, Status, Priority, Account.Name, OwnerId
           FROM Case
           WHERE Id = '${caseId}'
           LIMIT 1
@@ -194,14 +209,96 @@ function getAccountRecordUrl(accountId) {
   return `${SF_BASE_URL}/lightning/r/Account/${accountId}/view`;
 }
 
+// 후보 Case 선택
+function selectRecommendedMasterCase(candidates, duplicateResults) {
+  const duplicateCaseNumbers = new Set(
+    duplicateResults.map((item) => item.caseNumber)
+  );
+
+  const matchedCandidates = candidates.filter((candidate) =>
+    duplicateCaseNumbers.has(candidate.caseNumber)
+  );
+
+  if (!matchedCandidates.length) {
+    return null;
+  }
+
+  const workingCases = matchedCandidates
+    .filter((c) => c.status === "Working")
+    .sort((a, b) => new Date(a.createdDate) - new Date(b.createdDate));
+
+  if (workingCases.length) {
+    return workingCases[0];
+  }
+
+  const newCases = matchedCandidates
+    .filter((c) => c.status === "New")
+    .sort((a, b) => new Date(a.createdDate) - new Date(b.createdDate));
+
+  return newCases.length ? newCases[0] : null;
+}
+
+// Email 기반 User 조회
+async function getSalesforceUserByEmail(email) {
+  const sfAccessToken = await getSalesforceAccessToken();
+  const response = await axios.get(
+    `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
+    {
+      headers: {
+        Authorization: `Bearer ${sfAccessToken}`,
+        "Content-Type": "application/json"
+      },
+      params: {
+        q: `
+          SELECT Id, Name, Email, IsActive
+          FROM User
+          WHERE Email = '${email}'
+          LIMIT 1
+        `.replace(/\s+/g, " ").trim()
+      }
+    }
+  );
+
+  return response.data.records?.[0] || null;
+}
+
+// 해당 User가 해당 Queue의 멤버인지 아닌지
+async function isUserMember(queueGroupId, userId) {
+  const sfAccessToken = await getSalesforceAccessToken();
+  const response = await axios.get(
+    `${SF_BASE_URL}/services/data/${SF_API_VERSION}/query`,
+    {
+      headers: {
+        Authorization: `Bearer ${sfAccessToken}`,
+        "Content-Type": "application/json"
+      },
+      params: {
+        q: `
+          SELECT Id
+          FROM GroupMember
+          WHERE GroupId = '${queueGroupId}'
+          AND UserOrGroupId = '${userId}'
+          LIMIT 1
+        `.replace(/\s+/g, " ").trim()
+      }
+    }
+  );
+
+  return response.data.records.length > 0;
+}
+
 module.exports = {
   getSalesforceAccessToken,
   updateCaseStatus,
   updateCaseMergedInto,
+  updateCaseOwner,
   sendCaseEmail,
   getCaseInfo,
   getAccountInfo,
   getOpenCaseCount,
   getAccountRecordUrl,
-  getCaseInfoNumber
+  getCaseInfoNumber,
+  selectRecommendedMasterCase,
+  getSalesforceUserByEmail,
+  isUserMember
 };
