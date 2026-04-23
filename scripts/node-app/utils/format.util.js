@@ -28,7 +28,18 @@ function formatDate(isoString) {
   return `${map.year}-${map.month}-${map.day} / ${map.hour}:${map.minute}`;
 }
 
+// JSON parse
+function parseJsonValue(value) {
+  if (!value || typeof value !== "string") return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
 module.exports = {
   safe,
-  formatDate
+  formatDate,
+  parseJsonValue
 };

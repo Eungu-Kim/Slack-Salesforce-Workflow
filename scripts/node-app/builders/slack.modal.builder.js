@@ -201,8 +201,52 @@ function buildMergeConfirmModalView({
   };
 }
 
+// 담당하기 에러 모달
+function buildTakeCaseErrorModalView({
+  errorType,
+  context = {}
+}) {
+  const messageMap = {
+    no_caseId: "Case Id가 없습니다.",
+    get_slack_email_error: "Slack 사용자 이메일 조회에 실패했습니다.",
+    not_in_salesforceUser: "Salesforce 사용자 확인에 실패했습니다.",
+    not_in_queue: "해당 Queue의 멤버가 아닙니다.",
+    default: "예기치 못한 오류가 발생했습니다."
+  };
+  
+  const finalMessage = messageMap[errorType] || messageMap.default;
+
+  return {
+    type: "modal",
+    callback_id: "take_case_error_modal",
+    private_metadata: JSON.stringify(context),
+
+    title: {
+      type: "plain_text",
+      text: "⚠️ 오류 발생"
+    },
+    close: {
+      type: "plain_text",
+      text: "닫기"
+    },
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${finalMessage}*`
+        }
+      },
+      {
+        type: "divider"
+      }
+    ]
+  }
+}
+
 module.exports = {
   buildStartCaseModalView,
   buildMergeModalView,
-  buildMergeConfirmModalView
+  buildMergeConfirmModalView,
+  buildTakeCaseErrorModalView
 };

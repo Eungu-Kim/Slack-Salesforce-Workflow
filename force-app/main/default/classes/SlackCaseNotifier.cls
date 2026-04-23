@@ -18,7 +18,7 @@ public with sharing class SlackCaseNotifier {
         Id caseId = requests[0].caseId;
 
         Case c = [
-            SELECT Id, CaseNumber, Subject, Status, Priority, AccountId, Account.Name
+            SELECT Id, CaseNumber, Subject, Status, Priority, AccountId, Account.Name, Owner.Name
             FROM Case
             WHERE Id = :caseId
             LIMIT 1
@@ -46,7 +46,8 @@ public with sharing class SlackCaseNotifier {
             '\nSubject: ' + safe(c.Subject) +
             '\nStatus: ' + safe(c.Status) +
             '\nPriority: ' + safe(c.Priority) +
-            '\nAccount: ' + safe(c.AccountId != null ? c.Account.Name : null);
+            '\nAccount: ' + safe(c.AccountId != null ? c.Account.Name : null) +
+            '\nOwner: ' + safe(c.Owner.Name);
 
         List<Object> blocks = new List<Object>();
 
@@ -74,6 +75,10 @@ public with sharing class SlackCaseNotifier {
             new Map<String, Object>{
                 'type' => 'mrkdwn',
                 'text' => '*Priority :* ' + safe(c.Priority)
+            },
+            new Map<String, Object>{
+                'type' => 'mrkdwn',
+                'text' => '*Owner Queue :* ' + safe(c.Owner.Name)
             }
         };
 
