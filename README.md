@@ -61,26 +61,55 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 
 ## ⭐ 주요 기능
 
-### 1. 신규 Case Slack 알림
+### 1. 신규 Case 발생 + 담당하기
 
 - Salesforce Case 생성 시 Slack 채널로 실시간 알림 전송
-- 주요 정보 및 액션 버튼을 포함한 카드형 메시지 제공
+- Case 주요 정보 및 액션 버튼을 포함한 카드형 메시지 제공
+
+- `담당하기` 클릭 시:
+  - Slack 사용자 → Salesforce User 매핑
+  - Queue 기반 권한 검증 수행
+  - 담당자에게만 DM 작업공간 생성
+
+- 채널은 알림 및 협업 가시성을 유지하고  
+  실제 업무 처리는 **DM 작업공간에서 수행되는 구조로 설계**
 
 ![NewCase](https://github.com/Eungu-Kim/Slack-Salesforce-Workflow/releases/download/v1.0/newcase.gif)
 
 ---
 
-### 2. 고객 정보 조회
+### 2. 중복여부 확인 (Agent 기반 분석)
 
-- Slack에서 Account 정보 및 미해결 Case 수 조회
-- 운영자가 빠르게 상황을 파악할 수 있도록 요약 형태로 제공
+- 동일 Account의 미해결 Case를 기준으로 중복 후보 자동 조회
+- Agentforce를 활용하여:
+  - Issue 분류
+  - 유사도 점수 산출
+  - 중복 여부 판단
+
+- Slack에서 버튼 클릭만으로 분석 수행 및 결과 확인 가능
+- 중복 Case 병합 기준 및 정책 적용 지원
+
+![Duplicate](https://github.com/Eungu-Kim/Slack-Salesforce-Workflow/releases/download/v1.0/checkDup.gif)
 
 ---
 
-### 3. Case 처리 시작 (Email 전송)
+### 3. Case 처리 시작 + Next Best Action
 
-- Slack 모달을 통해 고객 응대 이메일 작성
-- 이메일 발송과 동시에 Case 상태 변경
+- Slack 모달을 통해 고객 응대 이메일 작성 및 발송
+- Case 상태 자동 변경 (New → Working)
+
+- Flow 기반 Next Best Action 구조:
+  - Case 이력 및 Context 데이터 수집
+  - Agent 분석 수행
+  - 추천 행동 및 우선순위 생성
+
+- Slack DM 작업공간에서:
+  - 추천 대응 행동
+  - 추천 사유
+  - 고객 응대 필요 여부
+  - 내부 조사 필요 여부
+
+를 구조화된 형태로 제공
 
 ![AccountEmail](https://github.com/Eungu-Kim/Slack-Salesforce-Workflow/releases/download/v1.0/accountEmail.gif)
 
@@ -88,9 +117,14 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 
 ### 4. Slack 인터랙션 기반 처리
 
-- 버튼 클릭 및 모달 입력을 통해  
+- Slack 버튼 및 모달 입력을 통해  
   Salesforce 데이터 조회 및 처리 수행
-- Slack → Node → Salesforce → Slack 흐름의 양방향 구조 구현
+
+- 전체 흐름:
+  - Slack → Node → Salesforce → Slack
+
+- 사용자 액션이 즉시 Salesforce 데이터 변경으로 이어지는  
+  **양방향 인터랙션 구조 구현**
 
 <br/>
 
@@ -130,29 +164,23 @@ Slack을 단순 커뮤니케이션 도구가 아닌
 
 ## 💡 경험 및 성과
 
-- **협업툴 기반 UX 설계 경험**
-  - Slack에서 CRM 데이터를 조회하고 처리하는 워크플로우 설계
+- **Work OS 기반 협업 구조 설계 경험**
+  - Slack을 CRM 업무 실행 인터페이스로 확장
+  - 채널 → DM 작업공간 분리 구조 설계
+
+- **권한 기반 UX 설계**
+  - Slack 사용자 → Salesforce 사용자 매핑
+  - Queue 기반 접근 제어 로직 구현
 
 - **양방향 시스템 연동 경험**
-  - Salesforce → Slack 알림, Slack → Salesforce 처리 흐름 구현
+  - Salesforce → Slack 알림
+  - Slack → Salesforce 처리 흐름 구현
 
-- **아키텍처 전환 경험**
-  - Flow 중심 구조에서 한계를 인식하고  
-    Apex + 외부 서버 기반 구조로 확장
+- **Flow + Agent 기반 오케스트레이션 설계**
+  - Flow를 중심으로 데이터 수집 → Agent 분석 → 결과 전달 구조 구현
 
-- **운영 관점 고려**
-  - 사용자 입력 UX, 처리 흐름, 이메일 전달 등 실제 운영 시나리오 반영
-
-<br/>
-
-## 🚀 확장 계획
-
-- **Agent 기반 Case 분석 및 자동화**
-  - 미해결 Case 간 유사도 분석을 통한 중복 이슈 식별 및 병합 지원
-  - 고객 문의 기반 해결 방향 및 응대 문구 자동 생성
-
-- **UX 고도화**
-  - Slack 내 알림 및 피드백 구조 개선
+- **실무형 고객지원 프로세스 구현**
+  - 이메일 응대, 상태 변경, 중복 처리 등 실제 운영 시나리오 반영
 
 <br/>
 
